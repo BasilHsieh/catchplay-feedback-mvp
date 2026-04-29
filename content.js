@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.23";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.24";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -460,17 +460,22 @@
   }
 
   function expandToOverlayRoot(element, card) {
+    const cardRect = card.getBoundingClientRect();
+    const widthCeiling = Math.min(window.innerWidth * 0.92, cardRect.width * 2.5);
     let best = element;
+    let bestRect = best.getBoundingClientRect();
     let current = element.parentElement;
 
     while (current && current !== document.body && current !== document.documentElement) {
       if (current.contains(card)) break;
 
       const rect = current.getBoundingClientRect();
-      if (rect.width > window.innerWidth * 0.92) break;
+      if (rect.width > widthCeiling) break;
       if (rect.height > window.innerHeight * 0.95) break;
+      if (rect.width > bestRect.width * 1.4) break;
 
       best = current;
+      bestRect = rect;
       current = current.parentElement;
     }
 
