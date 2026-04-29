@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.20";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.21";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -74,7 +74,8 @@
     toolbarHovered: false,
     lastCardRect: null,
     baselineCard: null,
-    baselineCardWidth: 0
+    baselineCardWidth: 0,
+    baselineCardHeight: 0
   };
 
   const toolbar = createToolbar();
@@ -315,6 +316,7 @@
       if (state.baselineCard !== card) {
         state.baselineCard = card;
         state.baselineCardWidth = rect.width;
+        state.baselineCardHeight = rect.height;
       }
     }
     applyToolbarScale(card);
@@ -340,6 +342,7 @@
       state.lastCardRect = null;
       state.baselineCard = null;
       state.baselineCardWidth = 0;
+      state.baselineCardHeight = 0;
       toolbar.style.setProperty("--cpfb-scale", "1");
       stopActiveTracking();
     }, 300);
@@ -386,13 +389,15 @@
   }
 
   function applyToolbarScale(card) {
-    if (!state.baselineCardWidth || !hasUsableCardRect(card)) {
+    if (!state.baselineCardWidth || !state.baselineCardHeight || !hasUsableCardRect(card)) {
       toolbar.style.setProperty("--cpfb-scale", "1");
       return;
     }
 
-    const currentWidth = card.getBoundingClientRect().width;
-    const scale = clamp(currentWidth / state.baselineCardWidth, 1, 2);
+    const rect = card.getBoundingClientRect();
+    const widthRatio = rect.width / state.baselineCardWidth;
+    const heightRatio = rect.height / state.baselineCardHeight;
+    const scale = clamp(Math.max(widthRatio, heightRatio), 1, 2);
     toolbar.style.setProperty("--cpfb-scale", scale.toFixed(3));
   }
 
@@ -1734,6 +1739,7 @@
     state.activeCard = null;
     state.baselineCard = null;
     state.baselineCardWidth = 0;
+    state.baselineCardHeight = 0;
     toolbar.style.setProperty("--cpfb-scale", "1");
     if (state.activeVisualElement) {
       state.activeVisualElement.classList.remove("cpfb-active-card");
