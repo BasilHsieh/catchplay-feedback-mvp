@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.25";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.26";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -406,7 +406,7 @@
 
     const widthRatio = rect.width / state.baselineCardWidth;
     const heightRatio = rect.height / state.baselineCardHeight;
-    const scale = clamp(Math.max(widthRatio, heightRatio), 1, 2);
+    const scale = clamp(Math.max(widthRatio, heightRatio), 1, 2.5);
     toolbar.style.setProperty("--cpfb-scale", scale.toFixed(3));
   }
 
@@ -493,17 +493,16 @@
   }
 
   function positionToolbar(rect) {
-    const targetWidth = clamp(rect.width, 240, window.innerWidth - 16);
+    const toolbarWidth = Math.min(toolbar.offsetWidth || 420, window.innerWidth - 16);
     const maxTop = Math.max(8, window.innerHeight - 56);
-    const maxLeft = Math.max(8, window.innerWidth - targetWidth - 8);
+    const maxLeft = Math.max(8, window.innerWidth - toolbarWidth - 8);
     const top = clamp(rect.top + 8, 8, maxTop);
     const left = clamp(
-      rect.left + rect.width / 2 - targetWidth / 2,
+      rect.left + rect.width / 2 - toolbarWidth / 2,
       8,
       maxLeft
     );
 
-    toolbar.style.width = `${Math.round(targetWidth)}px`;
     toolbar.style.top = `${Math.round(top)}px`;
     toolbar.style.left = `${Math.round(left)}px`;
   }

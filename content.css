@@ -5,9 +5,7 @@
   display: flex;
   gap: calc(8px * var(--cpfb-scale));
   align-items: center;
-  justify-content: space-between;
-  box-sizing: border-box;
-  max-width: calc(100vw - 24px);
+  max-width: min(720px, calc(100vw - 24px));
   padding: calc(8px * var(--cpfb-scale)) calc(12px * var(--cpfb-scale));
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: calc(8px * var(--cpfb-scale));
@@ -17,7 +15,6 @@
   font-family: Arial, Helvetica, sans-serif;
   pointer-events: auto;
   transition:
-    width 100ms linear,
     padding 100ms linear,
     gap 100ms linear,
     border-radius 100ms linear;
