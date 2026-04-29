@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.26";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.27";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -76,7 +76,8 @@
     baselineCard: null,
     baselineCardWidth: 0,
     baselineCardHeight: 0,
-    overlayLogged: false
+    overlayLogged: false,
+    naturalToolbarWidth: 0
   };
 
   const toolbar = createToolbar();
@@ -393,21 +394,43 @@
   }
 
   function applyToolbarScale(card) {
-    if (!state.baselineCardWidth || !state.baselineCardHeight) {
-      toolbar.style.setProperty("--cpfb-scale", "1");
-      return;
-    }
-
     const rect = getPresentationRect(card);
-    if (!rect || rect.width <= 0 || rect.height <= 0) {
+    if (!rect || rect.width <= 0) {
       toolbar.style.setProperty("--cpfb-scale", "1");
       return;
     }
 
-    const widthRatio = rect.width / state.baselineCardWidth;
-    const heightRatio = rect.height / state.baselineCardHeight;
-    const scale = clamp(Math.max(widthRatio, heightRatio), 1, 2.5);
+    const naturalWidth = measureNaturalToolbarWidth();
+    const targetWidth = rect.width * 0.92;
+    const scale = clamp(targetWidth / naturalWidth, 0.7, 2.5);
     toolbar.style.setProperty("--cpfb-scale", scale.toFixed(3));
+  }
+
+  function measureNaturalToolbarWidth() {
+    if (state.naturalToolbarWidth > 0) {
+      return state.naturalToolbarWidth;
+    }
+
+    const previousScale = toolbar.style.getPropertyValue("--cpfb-scale");
+    const previousVisibility = toolbar.style.visibility;
+    const wasHidden = toolbar.hidden;
+
+    toolbar.style.setProperty("--cpfb-scale", "1");
+    toolbar.style.visibility = "hidden";
+    toolbar.hidden = false;
+
+    const width = toolbar.offsetWidth || 300;
+
+    toolbar.hidden = wasHidden;
+    toolbar.style.visibility = previousVisibility;
+    if (previousScale) {
+      toolbar.style.setProperty("--cpfb-scale", previousScale);
+    } else {
+      toolbar.style.removeProperty("--cpfb-scale");
+    }
+
+    state.naturalToolbarWidth = width;
+    return width;
   }
 
   function getPresentationRect(card) {
