@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.24";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.25";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -346,6 +346,7 @@
       state.baselineCardHeight = 0;
       state.overlayLogged = false;
       toolbar.style.setProperty("--cpfb-scale", "1");
+      toolbar.style.width = "";
       stopActiveTracking();
     }, 300);
   }
@@ -492,16 +493,17 @@
   }
 
   function positionToolbar(rect) {
-    const toolbarWidth = Math.min(toolbar.offsetWidth || 420, window.innerWidth - 16);
+    const targetWidth = clamp(rect.width, 240, window.innerWidth - 16);
     const maxTop = Math.max(8, window.innerHeight - 56);
-    const maxLeft = Math.max(8, window.innerWidth - toolbarWidth - 8);
+    const maxLeft = Math.max(8, window.innerWidth - targetWidth - 8);
     const top = clamp(rect.top + 8, 8, maxTop);
     const left = clamp(
-      rect.left + rect.width / 2 - toolbarWidth / 2,
+      rect.left + rect.width / 2 - targetWidth / 2,
       8,
       maxLeft
     );
 
+    toolbar.style.width = `${Math.round(targetWidth)}px`;
     toolbar.style.top = `${Math.round(top)}px`;
     toolbar.style.left = `${Math.round(left)}px`;
   }
@@ -1820,6 +1822,7 @@
     state.baselineCardWidth = 0;
     state.baselineCardHeight = 0;
     toolbar.style.setProperty("--cpfb-scale", "1");
+    toolbar.style.width = "";
     if (state.activeVisualElement) {
       state.activeVisualElement.classList.remove("cpfb-active-card");
       state.activeVisualElement = null;
