@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.27";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.28";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -73,9 +73,6 @@
     trackingRaf: 0,
     toolbarHovered: false,
     lastCardRect: null,
-    baselineCard: null,
-    baselineCardWidth: 0,
-    baselineCardHeight: 0,
     overlayLogged: false,
     naturalToolbarWidth: 0
   };
@@ -313,15 +310,8 @@
     toolbar.hidden = false;
     highlight.hidden = false;
     if (hasUsableCardRect(card)) {
-      const rect = card.getBoundingClientRect();
-      state.lastCardRect = rect;
-      if (state.baselineCard !== card) {
-        state.baselineCard = card;
-        state.baselineCardWidth = rect.width;
-        state.baselineCardHeight = rect.height;
-      }
+      state.lastCardRect = card.getBoundingClientRect();
     }
-    applyToolbarScale(card);
     positionActiveUi(card);
     startActiveTracking();
   }
@@ -342,11 +332,7 @@
       setActiveCard(null);
       state.activeCard = null;
       state.lastCardRect = null;
-      state.baselineCard = null;
-      state.baselineCardWidth = 0;
-      state.baselineCardHeight = 0;
       state.overlayLogged = false;
-      toolbar.style.setProperty("--cpfb-scale", "1");
       toolbar.style.width = "";
       stopActiveTracking();
     }, 300);
@@ -364,7 +350,6 @@
       }
 
       if (!state.toolbarHovered && hasUsableCardRect(state.activeCard)) {
-        applyToolbarScale(state.activeCard);
         positionActiveUi(state.activeCard);
         state.lastCardRect = state.activeCard.getBoundingClientRect();
       }
@@ -393,29 +378,16 @@
     positionToolbar(rect);
   }
 
-  function applyToolbarScale(card) {
-    const rect = getPresentationRect(card);
-    if (!rect || rect.width <= 0) {
-      toolbar.style.setProperty("--cpfb-scale", "1");
-      return;
-    }
-
-    const naturalWidth = measureNaturalToolbarWidth();
-    const targetWidth = rect.width * 0.92;
-    const scale = clamp(targetWidth / naturalWidth, 0.7, 2.5);
-    toolbar.style.setProperty("--cpfb-scale", scale.toFixed(3));
-  }
-
   function measureNaturalToolbarWidth() {
     if (state.naturalToolbarWidth > 0) {
       return state.naturalToolbarWidth;
     }
 
-    const previousScale = toolbar.style.getPropertyValue("--cpfb-scale");
+    const previousWidth = toolbar.style.width;
     const previousVisibility = toolbar.style.visibility;
     const wasHidden = toolbar.hidden;
 
-    toolbar.style.setProperty("--cpfb-scale", "1");
+    toolbar.style.width = "";
     toolbar.style.visibility = "hidden";
     toolbar.hidden = false;
 
@@ -423,11 +395,7 @@
 
     toolbar.hidden = wasHidden;
     toolbar.style.visibility = previousVisibility;
-    if (previousScale) {
-      toolbar.style.setProperty("--cpfb-scale", previousScale);
-    } else {
-      toolbar.style.removeProperty("--cpfb-scale");
-    }
+    toolbar.style.width = previousWidth;
 
     state.naturalToolbarWidth = width;
     return width;
@@ -516,16 +484,18 @@
   }
 
   function positionToolbar(rect) {
-    const toolbarWidth = Math.min(toolbar.offsetWidth || 420, window.innerWidth - 16);
+    const naturalWidth = measureNaturalToolbarWidth();
+    const targetWidth = clamp(rect.width, naturalWidth, window.innerWidth - 16);
     const maxTop = Math.max(8, window.innerHeight - 56);
-    const maxLeft = Math.max(8, window.innerWidth - toolbarWidth - 8);
+    const maxLeft = Math.max(8, window.innerWidth - targetWidth - 8);
     const top = clamp(rect.top + 8, 8, maxTop);
     const left = clamp(
-      rect.left + rect.width / 2 - toolbarWidth / 2,
+      rect.left + rect.width / 2 - targetWidth / 2,
       8,
       maxLeft
     );
 
+    toolbar.style.width = `${Math.round(targetWidth)}px`;
     toolbar.style.top = `${Math.round(top)}px`;
     toolbar.style.left = `${Math.round(left)}px`;
   }
@@ -1840,10 +1810,6 @@
     debugPanel.hidden = true;
     state.toolbarHovered = false;
     state.activeCard = null;
-    state.baselineCard = null;
-    state.baselineCardWidth = 0;
-    state.baselineCardHeight = 0;
-    toolbar.style.setProperty("--cpfb-scale", "1");
     toolbar.style.width = "";
     if (state.activeVisualElement) {
       state.activeVisualElement.classList.remove("cpfb-active-card");
