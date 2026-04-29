@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.32";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.33";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -77,8 +77,8 @@
     lastCardRect: null,
     overlayLogged: false,
     detectedOverlay: null,
-    pinnedOverlay: null,
-    pinnedOverlayStyle: null
+    pinnedAncestors: null,
+    keepAliveInterval: 0
   };
 
   const toolbar = createToolbar();
@@ -427,41 +427,79 @@
 
   function pinPreviewVisible() {
     const preview = state.detectedOverlay;
-    if (!preview || !preview.isConnected || state.pinnedOverlay === preview) {
+    if (!preview || !preview.isConnected || state.pinnedAncestors) {
       return;
     }
 
-    state.pinnedOverlay = preview;
-    state.pinnedOverlayStyle = {
-      opacity: preview.style.getPropertyValue("opacity"),
-      opacityPriority: preview.style.getPropertyPriority("opacity"),
-      visibility: preview.style.getPropertyValue("visibility"),
-      visibilityPriority: preview.style.getPropertyPriority("visibility"),
-      pointerEvents: preview.style.getPropertyValue("pointer-events"),
-      pointerEventsPriority: preview.style.getPropertyPriority("pointer-events")
-    };
-    preview.style.setProperty("opacity", "1", "important");
-    preview.style.setProperty("visibility", "visible", "important");
-    preview.style.setProperty("pointer-events", "auto", "important");
+    const pinned = [];
+    let current = preview;
+    let depth = 0;
+    while (current && current !== document.body && current !== document.documentElement && depth < 16) {
+      pinned.push({
+        element: current,
+        opacity: current.style.getPropertyValue("opacity"),
+        opacityPriority: current.style.getPropertyPriority("opacity"),
+        visibility: current.style.getPropertyValue("visibility"),
+        visibilityPriority: current.style.getPropertyPriority("visibility"),
+        pointerEvents: current.style.getPropertyValue("pointer-events"),
+        pointerEventsPriority: current.style.getPropertyPriority("pointer-events")
+      });
+      current.style.setProperty("opacity", "1", "important");
+      current.style.setProperty("visibility", "visible", "important");
+      current.style.setProperty("pointer-events", "auto", "important");
+      current = current.parentElement;
+      depth += 1;
+    }
+
+    state.pinnedAncestors = pinned;
+    startKeepAlivePings();
   }
 
   function unpinPreviewVisible() {
-    const preview = state.pinnedOverlay;
-    const saved = state.pinnedOverlayStyle;
-    if (!preview || !saved) {
-      state.pinnedOverlay = null;
-      state.pinnedOverlayStyle = null;
+    stopKeepAlivePings();
+
+    const pinned = state.pinnedAncestors;
+    if (!pinned) {
       return;
     }
 
-    if (preview.isConnected) {
-      restoreInlineStyle(preview, "opacity", saved.opacity, saved.opacityPriority);
-      restoreInlineStyle(preview, "visibility", saved.visibility, saved.visibilityPriority);
-      restoreInlineStyle(preview, "pointer-events", saved.pointerEvents, saved.pointerEventsPriority);
+    for (const saved of pinned) {
+      if (!saved.element.isConnected) continue;
+      restoreInlineStyle(saved.element, "opacity", saved.opacity, saved.opacityPriority);
+      restoreInlineStyle(saved.element, "visibility", saved.visibility, saved.visibilityPriority);
+      restoreInlineStyle(saved.element, "pointer-events", saved.pointerEvents, saved.pointerEventsPriority);
     }
 
-    state.pinnedOverlay = null;
-    state.pinnedOverlayStyle = null;
+    state.pinnedAncestors = null;
+  }
+
+  function startKeepAlivePings() {
+    if (state.keepAliveInterval) return;
+    state.keepAliveInterval = window.setInterval(() => {
+      if (!state.toolbarHovered) {
+        stopKeepAlivePings();
+        return;
+      }
+      const target = state.detectedOverlay || state.activeCard;
+      if (!target || !target.isConnected) return;
+
+      const rect = target.getBoundingClientRect();
+      const event = new MouseEvent("mousemove", {
+        bubbles: true,
+        cancelable: true,
+        clientX: rect.left + Math.min(rect.width / 2, 20),
+        clientY: rect.top + Math.min(rect.height / 2, 20),
+        view: window
+      });
+      target.dispatchEvent(event);
+    }, 120);
+  }
+
+  function stopKeepAlivePings() {
+    if (state.keepAliveInterval) {
+      clearInterval(state.keepAliveInterval);
+      state.keepAliveInterval = 0;
+    }
   }
 
   function restoreInlineStyle(element, property, value, priority) {

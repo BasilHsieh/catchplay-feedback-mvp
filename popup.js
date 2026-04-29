@@ -2,6 +2,8 @@ const form = {
   userName: document.querySelector("#userName"),
   endpointUrl: document.querySelector("#endpointUrl"),
   enabled: document.querySelector("#enabled"),
+  devMode: document.querySelector("#devMode"),
+  devSection: document.querySelector("#devSection"),
   debugMode: document.querySelector("#debugMode"),
   save: document.querySelector("#save"),
   scanPage: document.querySelector("#scanPage"),
@@ -20,21 +22,29 @@ chrome.storage.sync.get(
     userName: "",
     endpointUrl: "",
     enabled: true,
-    debugMode: true
+    devMode: false,
+    debugMode: false
   },
   (items) => {
     form.userName.value = items.userName;
     form.endpointUrl.value = items.endpointUrl;
     form.enabled.checked = Boolean(items.enabled);
+    form.devMode.checked = Boolean(items.devMode);
     form.debugMode.checked = Boolean(items.debugMode);
+    form.devSection.hidden = !form.devMode.checked;
   }
 );
+
+form.devMode.addEventListener("change", () => {
+  form.devSection.hidden = !form.devMode.checked;
+});
 
 form.save.addEventListener("click", async () => {
   await chrome.storage.sync.set({
     userName: form.userName.value.trim(),
     endpointUrl: form.endpointUrl.value.trim(),
     enabled: form.enabled.checked,
+    devMode: form.devMode.checked,
     debugMode: form.debugMode.checked
   });
 

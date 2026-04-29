@@ -17,8 +17,8 @@
       </header>
 
       <label class="field">
-        <span>User name</span>
-        <input id="userName" type="text" autocomplete="off" placeholder="basil">
+        <span>你是誰？</span>
+        <input id="userName" type="text" autocomplete="off" placeholder="想留名字嗎？選填，例如 Basil">
       </label>
 
       <label class="field">
@@ -26,21 +26,38 @@
         <input id="endpointUrl" type="url" placeholder="https://script.google.com/...">
       </label>
 
-      <label class="toggle toggle--master">
-        <input id="enabled" type="checkbox">
-        <span>Enable extension</span>
-      </label>
+      <div class="switch-row switch-row--master">
+        <span class="switch-label">啟用 Extension</span>
+        <label class="switch">
+          <input id="enabled" type="checkbox">
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </label>
+      </div>
 
-      <label class="toggle">
-        <input id="debugMode" type="checkbox">
-        <span>Show detected cards</span>
-      </label>
+      <div class="switch-row">
+        <span class="switch-label">開發者模式</span>
+        <label class="switch">
+          <input id="devMode" type="checkbox">
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </label>
+      </div>
 
-      <button id="save" type="button">Save</button>
-      <button id="scanPage" class="secondary" type="button">Scan current page</button>
-      <button id="downloadScan" class="secondary" type="button" disabled>Download scan JSON</button>
+      <section id="devSection" class="dev-section" hidden>
+        <div class="switch-row">
+          <span class="switch-label">頁面顯示偵測到的卡片</span>
+          <label class="switch">
+            <input id="debugMode" type="checkbox">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </label>
+        </div>
+
+        <button id="scanPage" class="secondary" type="button">Scan current page</button>
+        <button id="downloadScan" class="secondary" type="button" disabled>Download scan JSON</button>
+        <textarea id="scanOutput" class="scan-output" readonly placeholder="Page scan JSON will appear here."></textarea>
+      </section>
+
+      <button id="save" type="button">儲存</button>
       <p id="status" class="status" role="status"></p>
-      <textarea id="scanOutput" class="scan-output" readonly placeholder="Page scan JSON will appear here."></textarea>
     </main>
 
     <script src="popup.js"></script>
