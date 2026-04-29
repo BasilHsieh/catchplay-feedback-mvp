@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "CATCHPLAY Feedback MVP",
+  "version": "0.1.19",
+  "description": "Internal feedback overlay for CATCHPLAY recommendation cards.",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "CATCHPLAY Feedback",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://catchplay.com/*",
+        "https://*.catchplay.com/*",
+        "http://catchplay.com/*",
+        "http://*.catchplay.com/*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

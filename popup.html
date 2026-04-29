@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CATCHPLAY Feedback</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="popup">
+      <header class="header">
+        <div class="title-row">
+          <h1>CATCHPLAY Feedback</h1>
+          <span id="extensionVersion" class="version-badge" aria-label="Extension version"></span>
+        </div>
+        <p>Recommendation feedback MVP</p>
+      </header>
+
+      <label class="field">
+        <span>User name</span>
+        <input id="userName" type="text" autocomplete="off" placeholder="basil">
+      </label>
+
+      <label class="field">
+        <span>Apps Script URL</span>
+        <input id="endpointUrl" type="url" placeholder="https://script.google.com/...">
+      </label>
+
+      <label class="toggle toggle--master">
+        <input id="enabled" type="checkbox">
+        <span>Enable extension</span>
+      </label>
+
+      <label class="toggle">
+        <input id="debugMode" type="checkbox">
+        <span>Show detected cards</span>
+      </label>
+
+      <button id="save" type="button">Save</button>
+      <button id="scanPage" class="secondary" type="button">Scan current page</button>
+      <button id="downloadScan" class="secondary" type="button" disabled>Download scan JSON</button>
+      <p id="status" class="status" role="status"></p>
+      <textarea id="scanOutput" class="scan-output" readonly placeholder="Page scan JSON will appear here."></textarea>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
