@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.30";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.31";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -191,6 +191,7 @@
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        button.blur();
         submitFeedback(option.type);
       });
       buttonRow.append(button);
@@ -342,6 +343,8 @@
       state.lastCardRect = null;
       state.overlayLogged = false;
       applyButtonSelectedState(null);
+      toolbar.style.transform = "";
+      toolbar.style.transformOrigin = "";
       stopActiveTracking();
     }, 300);
   }
@@ -470,17 +473,33 @@
 
   function positionToolbar(rect) {
     const toolbarWidth = toolbar.offsetWidth || 200;
-    const toolbarHeight = toolbar.offsetHeight || 64;
+    const toolbarHeight = toolbar.offsetHeight || 80;
     const inset = 8;
 
-    const idealLeft = rect.right - toolbarWidth - inset;
-    const idealTop = rect.bottom - toolbarHeight - inset;
+    const fitWidth = rect.width - inset * 2;
+    const scale = fitWidth > 0 && fitWidth < toolbarWidth
+      ? clamp(fitWidth / toolbarWidth, 0.5, 1)
+      : 1;
 
-    const left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - toolbarWidth - 8));
-    const top = clamp(idealTop, 8, Math.max(8, window.innerHeight - toolbarHeight - 8));
+    const effectiveWidth = toolbarWidth * scale;
+    const effectiveHeight = toolbarHeight * scale;
+
+    const idealLeft = rect.right - effectiveWidth - inset;
+    const idealTop = rect.bottom - effectiveHeight - inset;
+
+    const left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
+    const top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
 
     toolbar.style.top = `${Math.round(top)}px`;
     toolbar.style.left = `${Math.round(left)}px`;
+
+    if (scale < 1) {
+      toolbar.style.transform = `scale(${scale.toFixed(3)})`;
+      toolbar.style.transformOrigin = "top left";
+    } else {
+      toolbar.style.transform = "";
+      toolbar.style.transformOrigin = "";
+    }
   }
 
   function setActiveCard(card) {
