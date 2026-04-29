@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.29";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.30";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -16,6 +16,8 @@
     { type: "relevant", label: "喜歡", tone: "positive" },
     { type: "not_relevant", label: "不喜歡", tone: "negative" }
   ];
+  const FEEDBACK_CLEARED_TYPE = "cleared";
+  const STATE_STORAGE_PREFIX = "cpfb-feedback-state";
   const FEEDBACK_ICONS = {
     positive:
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
@@ -316,6 +318,8 @@
     if (hasUsableCardRect(card)) {
       state.lastCardRect = card.getBoundingClientRect();
     }
+    applyButtonSelectedState(null);
+    refreshToolbarSelectedState(card);
     positionActiveUi(card);
     startActiveTracking();
   }
@@ -337,6 +341,7 @@
       state.activeCard = null;
       state.lastCardRect = null;
       state.overlayLogged = false;
+      applyButtonSelectedState(null);
       stopActiveTracking();
     }, 300);
   }
@@ -553,15 +558,30 @@
     return best;
   }
 
-  async function submitFeedback(feedbackType) {
+  async function submitFeedback(clickedType) {
     if (!state.activeCard) {
       showToast("No active card detected.");
       return;
     }
 
-    const payload = await buildPayload(state.activeCard, feedbackType);
+    const payload = await buildPayload(state.activeCard, clickedType);
+    const stateKey = buildStateKey(payload);
+    const userName = payload.user || "";
+    const previousEntry = await getStoredFeedbackState(userName, stateKey);
+    const isToggleOff = previousEntry?.feedbackType === clickedType;
+
+    if (isToggleOff) {
+      payload.feedbackType = FEEDBACK_CLEARED_TYPE;
+      payload.previousFeedbackType = clickedType;
+      await setStoredFeedbackState(userName, stateKey, null);
+      applyButtonSelectedState(null);
+    } else {
+      await setStoredFeedbackState(userName, stateKey, clickedType);
+      applyButtonSelectedState(clickedType);
+    }
+
     console.log("[CATCHPLAY Feedback MVP] payload", payload);
-    showToast("Sending feedback...");
+    showToast(isToggleOff ? "Updating feedback..." : "Sending feedback...");
 
     chrome.runtime.sendMessage(
       {
@@ -586,9 +606,89 @@
           return;
         }
 
-        showToast("Feedback submitted.");
+        showToast(isToggleOff ? "Feedback cleared." : "Feedback submitted.");
       }
     );
+  }
+
+  function buildStateKey(payload) {
+    return [
+      payload.pageType || "",
+      payload.pageContextId || "",
+      payload.sectionListName || "",
+      payload.contentId || ""
+    ].join("|");
+  }
+
+  function stateStorageKey(userName) {
+    const safe = (userName || "").trim() || "anonymous";
+    return `${STATE_STORAGE_PREFIX}:${safe}`;
+  }
+
+  async function getStoredFeedbackState(userName, stateKey) {
+    const storageKey = stateStorageKey(userName);
+    const stored = await chrome.storage.local.get(storageKey);
+    const map = stored[storageKey] || {};
+    return map[stateKey] || null;
+  }
+
+  async function setStoredFeedbackState(userName, stateKey, feedbackType) {
+    const storageKey = stateStorageKey(userName);
+    const stored = await chrome.storage.local.get(storageKey);
+    const map = stored[storageKey] || {};
+
+    if (feedbackType === null) {
+      delete map[stateKey];
+    } else {
+      map[stateKey] = { feedbackType, updatedAt: new Date().toISOString() };
+    }
+
+    await chrome.storage.local.set({ [storageKey]: map });
+  }
+
+  function applyButtonSelectedState(feedbackType) {
+    const buttons = toolbar.querySelectorAll(".cpfb-button");
+    for (const button of buttons) {
+      if (feedbackType && button.dataset.feedbackType === feedbackType) {
+        button.classList.add("cpfb-button--selected");
+      } else {
+        button.classList.remove("cpfb-button--selected");
+      }
+    }
+  }
+
+  async function refreshToolbarSelectedState(card) {
+    if (!card) {
+      applyButtonSelectedState(null);
+      return;
+    }
+
+    try {
+      const { userName } = await chrome.storage.sync.get(["userName"]);
+      const anchor = findAnchor(card);
+      const metadata = getCardMetadata(card);
+      const sectionInfo = getSectionInfo(card, metadata);
+      const contentHref = normalizeUrl(anchor?.getAttribute("href") || "");
+      const contentId = getUsefulGtmItemId(metadata.itemId) || deriveContentId(contentHref);
+      const stateKey = buildStateKey({
+        pageType: derivePageType(location.href),
+        pageContextId: derivePageContextId(location.href),
+        sectionListName: sectionInfo.listName,
+        contentId
+      });
+
+      if (state.activeCard !== card) {
+        return;
+      }
+
+      const stored = await getStoredFeedbackState(userName || "", stateKey);
+      if (state.activeCard !== card) {
+        return;
+      }
+      applyButtonSelectedState(stored?.feedbackType || null);
+    } catch (error) {
+      console.warn("[CATCHPLAY Feedback MVP] state lookup failed", error);
+    }
   }
 
   async function buildPayload(card, feedbackType) {
