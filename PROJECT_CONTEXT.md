@@ -119,6 +119,49 @@ payload 要回答三件事：
 - ~~**Extension 全域 on/off 開關**~~：v0.1.16 完成。把原本的 `enabled` (`Enable hover feedback`) 升級為 master kill switch，label 改為 `Enable extension`。Disabled 時：不掃描、不顯示 toolbar / highlight / debug panel、清掉所有卡片上的 debug class、scan 訊息回拒絕錯誤（`silenceUi()`）。`updateDebugPanel` 也跟著 master 走（master off → debug panel 強制隱藏）。
 - ~~**首頁 GTM list 命名變更 (`DEFAULT` → `BASIC`)**~~：v0.1.16 補上 `BASIC` 系列對應（`LIVE_TV` / `NEW_ARRIVAL_ALLBRAND` / `TOP_RANKING` / `MOST_POPULAR_ALLBRAND` / `CP_FREE_MOVIE` / `CP_FREE_SERIES`），並新增 `EDITORPICKS_3` (戲院看不到的好片) / `EDITORPICKS_5` (向經典致敬)。舊 `DEFAULT` 對應保留以防回滾。
 
+## 已知未解 bug（請接手 fix）
+
+### 🐛 CATCHPLAY preview 在 cursor 移到 toolbar 時淡出
+
+**症狀**：使用者 hover 卡片 → CATCHPLAY 跳出大張 hover preview（含 trailer + 標題 + IMDb + 描述）。使用者把 cursor 移向 preview 右下角的 feedback toolbar 想點按鈕時，**preview 開始淡出 / 變半透明**，視覺上很糟。
+
+**根本原因**：toolbar 是 `documentElement.append()` 出來的元件，跟 CATCHPLAY 的 preview 不在同一個 DOM 子樹。cursor 從 preview → toolbar 時，瀏覽器對 preview 元件 fire `mouseleave` / pointer leave，CATCHPLAY 的 React 認為「使用者離開了」就觸發隱藏動畫。
+
+**v0.1.32 嘗試（沒用）**：
+- 偵測到 preview overlay 後，hover toolbar 時用 `!important` 覆寫該 overlay 元件的 `opacity: 1` / `visibility: visible` / `pointer-events: auto`
+- 失敗原因：CSS opacity **從父層繼承**，CATCHPLAY 是在 overlay 的某個 ancestor 設 opacity:0，覆寫 overlay 自己沒用
+
+**v0.1.33 嘗試（也沒用）**：
+- 從 detected overlay 一路 walk parent chain 到 body，每層都 `!important` 覆寫 opacity / visibility / pointer-events
+- 加上每 120ms dispatch 合成的 `mousemove` event 給 detected overlay 跟 active card
+- 仍然會淡出 — 表示 CATCHPLAY 用的不是這三個 CSS 屬性，可能是：
+  - `display: none`（但這通常配合別的）
+  - 直接 unmount React component（DOM 元件被移除）
+  - 用 `transform: scale(0)` 或 `clip-path`
+  - 在 preview 外層加一個 wrapper 元件控制顯示，我們沒抓到那層
+
+**接手建議**：
+
+1. **先做診斷**，不要再盲改。在 [content.js](content.js) `pinPreviewVisible` 加 console.log 印出每層 ancestor 的 `getComputedStyle()` 各屬性，hover preview → 移到 toolbar，看哪個屬性、哪一層在變
+2. 或裝 Claude in Chrome extension（[anthropic.com/claude-in-chrome](https://www.anthropic.com/claude-in-chrome)），用 `mcp__Claude_in_Chrome__javascript_tool` 自動 hover、抓 mutation
+3. 找到實際 hide 機制後對症下藥。如果是 `display: none` → 覆寫 `display`；如果是 unmount → 換策略（例如把 toolbar 直接 inject 成 preview 子元件）；如果是 transform → 覆寫 transform
+
+**完全不同的解法**（如果 pin 走不通）：
+
+- **重 parent toolbar**：偵測到 preview overlay 後，把 toolbar element 從 `documentElement` 移到 preview overlay 內部當 child。這樣 cursor 在 toolbar 上時 DOM-wise 還在 preview 裡，不會 trigger mouseleave。但有 React re-render 把 toolbar 拔掉的風險，需要 MutationObserver 重新 attach。
+- **改 toolbar 位置**：徹底放 preview 外面（例如 preview 上方 8px 浮空），讓 cursor 路徑明確跨出 preview，preview 淡出沒關係 — 但 toolbar 跟 preview 視覺斷開、回到「兩層」問題。
+- **改互動模型**：toolbar 不是 hover 才出，改成卡片右上角永久顯示一個小 icon，點開才出按鈕（類似 Netflix）
+
+**相關 code 位置**：
+- [content.js](content.js) `pinPreviewVisible` / `unpinPreviewVisible` / `startKeepAlivePings`
+- [content.js](content.js) `findOverlayPreview` / `expandToOverlayRoot`（detected overlay 是這裡產生的）
+- [content.js](content.js) `positionToolbar`（toolbar 位置邏輯）
+- [content.css](content.css) `.cpfb-toolbar`（toolbar 樣式 / blur backdrop）
+
+**驗證方式**：reload extension + 重開 CATCHPLAY 分頁，hover 任何有 trailer preview 的卡（首頁「推薦給你」row 大部分都有），cursor 慢慢往 preview 右下角 toolbar 移動，preview 應該全程不淡出。
+
+---
+
 ## 尚待團隊決議
 
 - 演算法側需要的 `data-algorithm-id` / `recommendation-reason` / `ranking-score` 等屬性，能不能請 CATCHPLAY 內部前端加？沒有的話，feedback 只能跟「版位 + 內容 ID」綁，不能跟「具體推薦原因」綁。
