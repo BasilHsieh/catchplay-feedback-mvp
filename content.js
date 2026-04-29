@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.22";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.23";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -453,10 +453,28 @@
       if (rect.width > window.innerWidth * 0.92) continue;
       if (rect.height > window.innerHeight * 0.95) continue;
 
-      return element;
+      return expandToOverlayRoot(element, card);
     }
 
     return null;
+  }
+
+  function expandToOverlayRoot(element, card) {
+    let best = element;
+    let current = element.parentElement;
+
+    while (current && current !== document.body && current !== document.documentElement) {
+      if (current.contains(card)) break;
+
+      const rect = current.getBoundingClientRect();
+      if (rect.width > window.innerWidth * 0.92) break;
+      if (rect.height > window.innerHeight * 0.95) break;
+
+      best = current;
+      current = current.parentElement;
+    }
+
+    return best;
   }
 
   function positionHighlight(rect) {
