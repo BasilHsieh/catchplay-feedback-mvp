@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.31";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.32";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -75,7 +75,10 @@
     trackingRaf: 0,
     toolbarHovered: false,
     lastCardRect: null,
-    overlayLogged: false
+    overlayLogged: false,
+    detectedOverlay: null,
+    pinnedOverlay: null,
+    pinnedOverlayStyle: null
   };
 
   const toolbar = createToolbar();
@@ -202,10 +205,12 @@
     element.addEventListener("mouseenter", () => {
       clearTimeout(state.hideTimer);
       state.toolbarHovered = true;
+      pinPreviewVisible();
     });
 
     element.addEventListener("mouseleave", () => {
       state.toolbarHovered = false;
+      unpinPreviewVisible();
       hideToolbarSoon();
     });
 
@@ -342,6 +347,8 @@
       state.activeCard = null;
       state.lastCardRect = null;
       state.overlayLogged = false;
+      state.detectedOverlay = null;
+      unpinPreviewVisible();
       applyButtonSelectedState(null);
       toolbar.style.transform = "";
       toolbar.style.transformOrigin = "";
@@ -391,6 +398,7 @@
 
   function getPresentationRect(card) {
     if (!card || !hasUsableCardRect(card)) {
+      state.detectedOverlay = null;
       return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
     }
 
@@ -398,8 +406,11 @@
     const overlay = findOverlayPreview(card, cardRect);
 
     if (!overlay) {
+      state.detectedOverlay = null;
       return cardRect;
     }
+
+    state.detectedOverlay = overlay;
 
     if (!state.overlayLogged) {
       state.overlayLogged = true;
@@ -412,6 +423,53 @@
     }
 
     return overlay.getBoundingClientRect();
+  }
+
+  function pinPreviewVisible() {
+    const preview = state.detectedOverlay;
+    if (!preview || !preview.isConnected || state.pinnedOverlay === preview) {
+      return;
+    }
+
+    state.pinnedOverlay = preview;
+    state.pinnedOverlayStyle = {
+      opacity: preview.style.getPropertyValue("opacity"),
+      opacityPriority: preview.style.getPropertyPriority("opacity"),
+      visibility: preview.style.getPropertyValue("visibility"),
+      visibilityPriority: preview.style.getPropertyPriority("visibility"),
+      pointerEvents: preview.style.getPropertyValue("pointer-events"),
+      pointerEventsPriority: preview.style.getPropertyPriority("pointer-events")
+    };
+    preview.style.setProperty("opacity", "1", "important");
+    preview.style.setProperty("visibility", "visible", "important");
+    preview.style.setProperty("pointer-events", "auto", "important");
+  }
+
+  function unpinPreviewVisible() {
+    const preview = state.pinnedOverlay;
+    const saved = state.pinnedOverlayStyle;
+    if (!preview || !saved) {
+      state.pinnedOverlay = null;
+      state.pinnedOverlayStyle = null;
+      return;
+    }
+
+    if (preview.isConnected) {
+      restoreInlineStyle(preview, "opacity", saved.opacity, saved.opacityPriority);
+      restoreInlineStyle(preview, "visibility", saved.visibility, saved.visibilityPriority);
+      restoreInlineStyle(preview, "pointer-events", saved.pointerEvents, saved.pointerEventsPriority);
+    }
+
+    state.pinnedOverlay = null;
+    state.pinnedOverlayStyle = null;
+  }
+
+  function restoreInlineStyle(element, property, value, priority) {
+    if (value) {
+      element.style.setProperty(property, value, priority || "");
+    } else {
+      element.style.removeProperty(property);
+    }
   }
 
   function findOverlayPreview(card, cardRect) {
@@ -1907,6 +1965,8 @@
     debugPanel.hidden = true;
     state.toolbarHovered = false;
     state.activeCard = null;
+    state.detectedOverlay = null;
+    unpinPreviewVisible();
     if (state.activeVisualElement) {
       state.activeVisualElement.classList.remove("cpfb-active-card");
       state.activeVisualElement = null;
