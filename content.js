@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.21";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.22";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -75,7 +75,8 @@
     lastCardRect: null,
     baselineCard: null,
     baselineCardWidth: 0,
-    baselineCardHeight: 0
+    baselineCardHeight: 0,
+    overlayLogged: false
   };
 
   const toolbar = createToolbar();
@@ -343,6 +344,7 @@
       state.baselineCard = null;
       state.baselineCardWidth = 0;
       state.baselineCardHeight = 0;
+      state.overlayLogged = false;
       toolbar.style.setProperty("--cpfb-scale", "1");
       stopActiveTracking();
     }, 300);
@@ -384,25 +386,80 @@
   }
 
   function positionActiveUi(card) {
-    positionHighlight(card);
-    positionToolbar(card);
+    const rect = getPresentationRect(card);
+    positionHighlight(rect);
+    positionToolbar(rect);
   }
 
   function applyToolbarScale(card) {
-    if (!state.baselineCardWidth || !state.baselineCardHeight || !hasUsableCardRect(card)) {
+    if (!state.baselineCardWidth || !state.baselineCardHeight) {
       toolbar.style.setProperty("--cpfb-scale", "1");
       return;
     }
 
-    const rect = card.getBoundingClientRect();
+    const rect = getPresentationRect(card);
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      toolbar.style.setProperty("--cpfb-scale", "1");
+      return;
+    }
+
     const widthRatio = rect.width / state.baselineCardWidth;
     const heightRatio = rect.height / state.baselineCardHeight;
     const scale = clamp(Math.max(widthRatio, heightRatio), 1, 2);
     toolbar.style.setProperty("--cpfb-scale", scale.toFixed(3));
   }
 
-  function positionHighlight(card) {
-    const rect = getVisibleRect(card);
+  function getPresentationRect(card) {
+    if (!card || !hasUsableCardRect(card)) {
+      return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
+    }
+
+    const cardRect = card.getBoundingClientRect();
+    const overlay = findOverlayPreview(card, cardRect);
+
+    if (!overlay) {
+      return cardRect;
+    }
+
+    if (!state.overlayLogged) {
+      state.overlayLogged = true;
+      console.log("[CATCHPLAY Feedback MVP] preview overlay detected", {
+        tag: overlay.tagName.toLowerCase(),
+        className: typeof overlay.className === "string" ? overlay.className.slice(0, 200) : "",
+        rect: overlay.getBoundingClientRect(),
+        cardRect
+      });
+    }
+
+    return overlay.getBoundingClientRect();
+  }
+
+  function findOverlayPreview(card, cardRect) {
+    const cx = cardRect.left + cardRect.width / 2;
+    const cy = cardRect.top + cardRect.height / 2;
+
+    const stack = document.elementsFromPoint(cx, cy);
+    for (const element of stack) {
+      if (!element || !element.isConnected) continue;
+      if (element === toolbar || toolbar.contains(element)) continue;
+      if (element === highlight || highlight.contains(element)) continue;
+      if (element === debugPanel || debugPanel.contains(element)) continue;
+      if (element === toast || toast.contains(element)) continue;
+      if (element === card || card.contains(element) || element.contains(card)) continue;
+      if (element === document.body || element === document.documentElement) continue;
+
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= cardRect.width && rect.height <= cardRect.height) continue;
+      if (rect.width > window.innerWidth * 0.92) continue;
+      if (rect.height > window.innerHeight * 0.95) continue;
+
+      return element;
+    }
+
+    return null;
+  }
+
+  function positionHighlight(rect) {
     const padding = 3;
 
     highlight.style.top = `${Math.round(rect.top - padding)}px`;
@@ -411,8 +468,7 @@
     highlight.style.height = `${Math.round(rect.height + padding * 2)}px`;
   }
 
-  function positionToolbar(card) {
-    const rect = getVisibleRect(card);
+  function positionToolbar(rect) {
     const toolbarWidth = Math.min(toolbar.offsetWidth || 420, window.innerWidth - 16);
     const maxTop = Math.max(8, window.innerHeight - 56);
     const maxLeft = Math.max(8, window.innerWidth - toolbarWidth - 8);
