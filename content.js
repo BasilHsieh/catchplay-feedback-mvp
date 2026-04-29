@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.33";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.34";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -77,8 +77,9 @@
     lastCardRect: null,
     overlayLogged: false,
     detectedOverlay: null,
-    pinnedAncestors: null,
-    keepAliveInterval: 0
+    toolbarHost: null,
+    toolbarHostPosition: "",
+    toolbarHostPositionPriority: ""
   };
 
   const toolbar = createToolbar();
@@ -201,6 +202,27 @@
     }
 
     element.append(buttonRow);
+
+    element.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+
+    element.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+    });
+
+    element.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+    });
+
+    element.addEventListener("mouseup", (event) => {
+      event.stopPropagation();
+    });
+
+    element.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
 
     element.addEventListener("mouseenter", () => {
       clearTimeout(state.hideTimer);
@@ -392,6 +414,7 @@
 
   function positionActiveUi(card) {
     const rect = getPresentationRect(card);
+    syncToolbarHost();
     positionHighlight(rect);
     positionToolbar(rect);
   }
@@ -427,79 +450,70 @@
 
   function pinPreviewVisible() {
     const preview = state.detectedOverlay;
-    if (!preview || !preview.isConnected || state.pinnedAncestors) {
+    if (!preview || !preview.isConnected) {
       return;
     }
 
-    const pinned = [];
-    let current = preview;
-    let depth = 0;
-    while (current && current !== document.body && current !== document.documentElement && depth < 16) {
-      pinned.push({
-        element: current,
-        opacity: current.style.getPropertyValue("opacity"),
-        opacityPriority: current.style.getPropertyPriority("opacity"),
-        visibility: current.style.getPropertyValue("visibility"),
-        visibilityPriority: current.style.getPropertyPriority("visibility"),
-        pointerEvents: current.style.getPropertyValue("pointer-events"),
-        pointerEventsPriority: current.style.getPropertyPriority("pointer-events")
-      });
-      current.style.setProperty("opacity", "1", "important");
-      current.style.setProperty("visibility", "visible", "important");
-      current.style.setProperty("pointer-events", "auto", "important");
-      current = current.parentElement;
-      depth += 1;
-    }
-
-    state.pinnedAncestors = pinned;
-    startKeepAlivePings();
+    mountToolbarInPreview(preview);
   }
 
   function unpinPreviewVisible() {
-    stopKeepAlivePings();
+    syncToolbarHost();
+  }
 
-    const pinned = state.pinnedAncestors;
-    if (!pinned) {
+  function syncToolbarHost() {
+    const preview = state.detectedOverlay;
+    if (preview && preview.isConnected) {
+      mountToolbarInPreview(preview);
       return;
     }
 
-    for (const saved of pinned) {
-      if (!saved.element.isConnected) continue;
-      restoreInlineStyle(saved.element, "opacity", saved.opacity, saved.opacityPriority);
-      restoreInlineStyle(saved.element, "visibility", saved.visibility, saved.visibilityPriority);
-      restoreInlineStyle(saved.element, "pointer-events", saved.pointerEvents, saved.pointerEventsPriority);
-    }
-
-    state.pinnedAncestors = null;
+    moveToolbarToDocumentRoot();
   }
 
-  function startKeepAlivePings() {
-    if (state.keepAliveInterval) return;
-    state.keepAliveInterval = window.setInterval(() => {
-      if (!state.toolbarHovered) {
-        stopKeepAlivePings();
-        return;
-      }
-      const target = state.detectedOverlay || state.activeCard;
-      if (!target || !target.isConnected) return;
+  function mountToolbarInPreview(preview) {
+    if (state.toolbarHost === preview && toolbar.parentElement === preview) {
+      toolbar.classList.add("cpfb-toolbar--preview-mounted");
+      return;
+    }
 
-      const rect = target.getBoundingClientRect();
-      const event = new MouseEvent("mousemove", {
-        bubbles: true,
-        cancelable: true,
-        clientX: rect.left + Math.min(rect.width / 2, 20),
-        clientY: rect.top + Math.min(rect.height / 2, 20),
-        view: window
-      });
-      target.dispatchEvent(event);
-    }, 120);
+    restoreToolbarHostPosition();
+    state.toolbarHost = preview;
+    state.toolbarHostPosition = preview.style.getPropertyValue("position");
+    state.toolbarHostPositionPriority = preview.style.getPropertyPriority("position");
+
+    if (getComputedStyle(preview).getPropertyValue("position") === "static") {
+      preview.style.setProperty("position", "relative", "important");
+    }
+
+    preview.append(toolbar);
+    toolbar.classList.add("cpfb-toolbar--preview-mounted");
   }
 
-  function stopKeepAlivePings() {
-    if (state.keepAliveInterval) {
-      clearInterval(state.keepAliveInterval);
-      state.keepAliveInterval = 0;
+  function moveToolbarToDocumentRoot() {
+    if (toolbar.parentElement !== document.documentElement) {
+      document.documentElement.append(toolbar);
     }
+
+    toolbar.classList.remove("cpfb-toolbar--preview-mounted");
+    restoreToolbarHostPosition();
+  }
+
+  function restoreToolbarHostPosition() {
+    if (!state.toolbarHost) {
+      return;
+    }
+
+    restoreInlineStyle(
+      state.toolbarHost,
+      "position",
+      state.toolbarHostPosition,
+      state.toolbarHostPositionPriority
+    );
+
+    state.toolbarHost = null;
+    state.toolbarHostPosition = "";
+    state.toolbarHostPositionPriority = "";
   }
 
   function restoreInlineStyle(element, property, value, priority) {
@@ -583,8 +597,14 @@
     const idealLeft = rect.right - effectiveWidth - inset;
     const idealTop = rect.bottom - effectiveHeight - inset;
 
-    const left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
-    const top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
+    let left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
+    let top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
+
+    if (state.toolbarHost && toolbar.parentElement === state.toolbarHost) {
+      const hostRect = state.toolbarHost.getBoundingClientRect();
+      left -= hostRect.left;
+      top -= hostRect.top;
+    }
 
     toolbar.style.top = `${Math.round(top)}px`;
     toolbar.style.left = `${Math.round(left)}px`;

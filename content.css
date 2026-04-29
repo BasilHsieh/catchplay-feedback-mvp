@@ -24,6 +24,10 @@
   display: none;
 }
 
+.cpfb-toolbar--preview-mounted {
+  position: absolute;
+}
+
 .cpfb-prompt {
   color: rgba(255, 255, 255, 0.78);
   font: 500 12px/1.25 Arial, Helvetica, sans-serif;

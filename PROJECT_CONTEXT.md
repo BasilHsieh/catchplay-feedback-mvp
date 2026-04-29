@@ -121,7 +121,7 @@ payload 要回答三件事：
 
 ## 已知未解 bug（請接手 fix）
 
-### 🐛 CATCHPLAY preview 在 cursor 移到 toolbar 時淡出
+### ~~🐛 CATCHPLAY preview 在 cursor 移到 toolbar 時淡出~~（v0.1.34 已修）
 
 **症狀**：使用者 hover 卡片 → CATCHPLAY 跳出大張 hover preview（含 trailer + 標題 + IMDb + 描述）。使用者把 cursor 移向 preview 右下角的 feedback toolbar 想點按鈕時，**preview 開始淡出 / 變半透明**，視覺上很糟。
 
@@ -139,6 +139,12 @@ payload 要回答三件事：
   - 直接 unmount React component（DOM 元件被移除）
   - 用 `transform: scale(0)` 或 `clip-path`
   - 在 preview 外層加一個 wrapper 元件控制顯示，我們沒抓到那層
+
+**v0.1.34 修正**：
+- 診斷確認：cursor 進 toolbar 後，detected preview 的 `isConnected` 變成 `false`，`getComputedStyle()` 回空值；不是 `opacity` / `visibility` / `pointer-events` / `display` / `transform` 單純被改掉，而是 quick-view preview 被 React unmount。
+- 修法：偵測到 preview overlay 時，把同一個 toolbar DOM node reparent 到 preview 內部當 child；沒有 active preview 或隱藏時再移回 `documentElement`。
+- 因為 preview 本身有 `transform`，toolbar 在 preview 內改用 `position: absolute`，並把 viewport 座標轉成相對 preview 的座標，避免位置被 transform 算兩次。
+- 補上 toolbar 背景 click / pointer event 的 propagation guard，避免 toolbar 變成 preview child 後，點在 toolbar 背景冒泡到 CATCHPLAY preview 造成導頁。
 
 **接手建議**：
 
