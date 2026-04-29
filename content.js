@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.28";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.29";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -73,8 +73,7 @@
     trackingRaf: 0,
     toolbarHovered: false,
     lastCardRect: null,
-    overlayLogged: false,
-    naturalToolbarWidth: 0
+    overlayLogged: false
   };
 
   const toolbar = createToolbar();
@@ -170,10 +169,13 @@
     element.className = "cpfb-toolbar";
     element.hidden = true;
 
-    const question = document.createElement("span");
-    question.className = "cpfb-question";
-    question.textContent = FEEDBACK_QUESTION;
-    element.append(question);
+    const prompt = document.createElement("div");
+    prompt.className = "cpfb-prompt";
+    prompt.textContent = FEEDBACK_QUESTION;
+    element.append(prompt);
+
+    const buttonRow = document.createElement("div");
+    buttonRow.className = "cpfb-buttons";
 
     for (const option of FEEDBACK_OPTIONS) {
       const button = document.createElement("button");
@@ -189,8 +191,10 @@
         event.stopPropagation();
         submitFeedback(option.type);
       });
-      element.append(button);
+      buttonRow.append(button);
     }
+
+    element.append(buttonRow);
 
     element.addEventListener("mouseenter", () => {
       clearTimeout(state.hideTimer);
@@ -333,7 +337,6 @@
       state.activeCard = null;
       state.lastCardRect = null;
       state.overlayLogged = false;
-      toolbar.style.width = "";
       stopActiveTracking();
     }, 300);
   }
@@ -376,29 +379,6 @@
     const rect = getPresentationRect(card);
     positionHighlight(rect);
     positionToolbar(rect);
-  }
-
-  function measureNaturalToolbarWidth() {
-    if (state.naturalToolbarWidth > 0) {
-      return state.naturalToolbarWidth;
-    }
-
-    const previousWidth = toolbar.style.width;
-    const previousVisibility = toolbar.style.visibility;
-    const wasHidden = toolbar.hidden;
-
-    toolbar.style.width = "";
-    toolbar.style.visibility = "hidden";
-    toolbar.hidden = false;
-
-    const width = toolbar.offsetWidth || 300;
-
-    toolbar.hidden = wasHidden;
-    toolbar.style.visibility = previousVisibility;
-    toolbar.style.width = previousWidth;
-
-    state.naturalToolbarWidth = width;
-    return width;
   }
 
   function getPresentationRect(card) {
@@ -484,18 +464,16 @@
   }
 
   function positionToolbar(rect) {
-    const naturalWidth = measureNaturalToolbarWidth();
-    const targetWidth = clamp(rect.width, naturalWidth, window.innerWidth - 16);
-    const maxTop = Math.max(8, window.innerHeight - 56);
-    const maxLeft = Math.max(8, window.innerWidth - targetWidth - 8);
-    const top = clamp(rect.top + 8, 8, maxTop);
-    const left = clamp(
-      rect.left + rect.width / 2 - targetWidth / 2,
-      8,
-      maxLeft
-    );
+    const toolbarWidth = toolbar.offsetWidth || 200;
+    const toolbarHeight = toolbar.offsetHeight || 64;
+    const inset = 8;
 
-    toolbar.style.width = `${Math.round(targetWidth)}px`;
+    const idealLeft = rect.right - toolbarWidth - inset;
+    const idealTop = rect.bottom - toolbarHeight - inset;
+
+    const left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - toolbarWidth - 8));
+    const top = clamp(idealTop, 8, Math.max(8, window.innerHeight - toolbarHeight - 8));
+
     toolbar.style.top = `${Math.round(top)}px`;
     toolbar.style.left = `${Math.round(left)}px`;
   }
@@ -1810,7 +1788,6 @@
     debugPanel.hidden = true;
     state.toolbarHovered = false;
     state.activeCard = null;
-    toolbar.style.width = "";
     if (state.activeVisualElement) {
       state.activeVisualElement.classList.remove("cpfb-active-card");
       state.activeVisualElement = null;

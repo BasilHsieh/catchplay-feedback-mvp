@@ -2,46 +2,57 @@
   position: fixed;
   z-index: 2147483647;
   display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
   box-sizing: border-box;
   max-width: calc(100vw - 16px);
-  padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 8px;
-  background: rgba(18, 22, 28, 0.94);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36);
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: rgba(12, 14, 18, 0.55);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
   color: #fff;
   font-family: Arial, Helvetica, sans-serif;
   pointer-events: auto;
-  transition: width 100ms linear;
+  transition: top 120ms ease-out, left 120ms ease-out;
 }
 
 .cpfb-toolbar[hidden] {
   display: none;
 }
 
-.cpfb-question {
-  margin-right: 4px;
-  color: rgba(255, 255, 255, 0.86);
-  font: 13px/1.2 Arial, Helvetica, sans-serif;
+.cpfb-prompt {
+  color: rgba(255, 255, 255, 0.7);
+  font: 11px/1.2 Arial, Helvetica, sans-serif;
+  text-align: center;
   white-space: nowrap;
+}
+
+.cpfb-buttons {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
 }
 
 .cpfb-button {
   display: inline-flex;
+  flex: 1;
   gap: 5px;
   align-items: center;
-  min-height: 30px;
+  justify-content: center;
+  min-height: 28px;
   padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
   color: #fff;
   font: 12px/1 Arial, Helvetica, sans-serif;
   white-space: nowrap;
   cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
 .cpfb-button:hover,
@@ -52,8 +63,8 @@
 
 .cpfb-button-icon {
   display: inline-flex;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
 .cpfb-button-icon svg {
@@ -94,19 +105,16 @@
 }
 
 .cpfb-active-card {
-  outline: 2px solid rgba(31, 111, 235, 0.96) !important;
-  outline-offset: 3px !important;
-  filter: brightness(1.08) saturate(1.06);
+  outline: 1px solid rgba(255, 255, 255, 0.45) !important;
+  outline-offset: 2px !important;
 }
 
 .cpfb-highlight {
   position: fixed;
   z-index: 2147483646;
-  border: 3px solid rgba(31, 111, 235, 0.98);
-  border-radius: 6px;
-  box-shadow:
-    0 0 0 9999px rgba(0, 0, 0, 0.08),
-    0 0 24px rgba(31, 111, 235, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 8px;
+  box-shadow: 0 0 16px rgba(0, 0, 0, 0.18);
   pointer-events: none;
 }
 
