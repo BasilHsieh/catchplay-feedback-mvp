@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.19";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.20";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -72,7 +72,9 @@
     toastTimer: 0,
     trackingRaf: 0,
     toolbarHovered: false,
-    lastCardRect: null
+    lastCardRect: null,
+    baselineCard: null,
+    baselineCardWidth: 0
   };
 
   const toolbar = createToolbar();
@@ -308,8 +310,14 @@
     toolbar.hidden = false;
     highlight.hidden = false;
     if (hasUsableCardRect(card)) {
-      state.lastCardRect = card.getBoundingClientRect();
+      const rect = card.getBoundingClientRect();
+      state.lastCardRect = rect;
+      if (state.baselineCard !== card) {
+        state.baselineCard = card;
+        state.baselineCardWidth = rect.width;
+      }
     }
+    applyToolbarScale(card);
     positionActiveUi(card);
     startActiveTracking();
   }
@@ -330,6 +338,9 @@
       setActiveCard(null);
       state.activeCard = null;
       state.lastCardRect = null;
+      state.baselineCard = null;
+      state.baselineCardWidth = 0;
+      toolbar.style.setProperty("--cpfb-scale", "1");
       stopActiveTracking();
     }, 300);
   }
@@ -346,6 +357,7 @@
       }
 
       if (!state.toolbarHovered && hasUsableCardRect(state.activeCard)) {
+        applyToolbarScale(state.activeCard);
         positionActiveUi(state.activeCard);
         state.lastCardRect = state.activeCard.getBoundingClientRect();
       }
@@ -371,6 +383,17 @@
   function positionActiveUi(card) {
     positionHighlight(card);
     positionToolbar(card);
+  }
+
+  function applyToolbarScale(card) {
+    if (!state.baselineCardWidth || !hasUsableCardRect(card)) {
+      toolbar.style.setProperty("--cpfb-scale", "1");
+      return;
+    }
+
+    const currentWidth = card.getBoundingClientRect().width;
+    const scale = clamp(currentWidth / state.baselineCardWidth, 1, 2);
+    toolbar.style.setProperty("--cpfb-scale", scale.toFixed(3));
   }
 
   function positionHighlight(card) {
@@ -1709,6 +1732,9 @@
     debugPanel.hidden = true;
     state.toolbarHovered = false;
     state.activeCard = null;
+    state.baselineCard = null;
+    state.baselineCardWidth = 0;
+    toolbar.style.setProperty("--cpfb-scale", "1");
     if (state.activeVisualElement) {
       state.activeVisualElement.classList.remove("cpfb-active-card");
       state.activeVisualElement = null;

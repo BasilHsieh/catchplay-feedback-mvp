@@ -1,18 +1,23 @@
 .cpfb-toolbar {
+  --cpfb-scale: 1;
   position: fixed;
   z-index: 2147483647;
   display: flex;
-  gap: 8px;
+  gap: calc(8px * var(--cpfb-scale));
   align-items: center;
-  max-width: min(520px, calc(100vw - 24px));
-  padding: 8px 12px;
+  max-width: min(720px, calc(100vw - 24px));
+  padding: calc(8px * var(--cpfb-scale)) calc(12px * var(--cpfb-scale));
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--cpfb-scale));
   background: rgba(18, 22, 28, 0.94);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36);
   color: #fff;
   font-family: Arial, Helvetica, sans-serif;
   pointer-events: auto;
+  transition:
+    padding 100ms linear,
+    gap 100ms linear,
+    border-radius 100ms linear;
 }
 
 .cpfb-toolbar[hidden] {
@@ -20,25 +25,36 @@
 }
 
 .cpfb-question {
-  margin-right: 4px;
+  margin-right: calc(4px * var(--cpfb-scale));
   color: rgba(255, 255, 255, 0.86);
-  font: 13px/1.2 Arial, Helvetica, sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: calc(13px * var(--cpfb-scale));
+  line-height: 1.2;
   white-space: nowrap;
+  transition: font-size 100ms linear, margin-right 100ms linear;
 }
 
 .cpfb-button {
   display: inline-flex;
-  gap: 5px;
+  gap: calc(5px * var(--cpfb-scale));
   align-items: center;
-  min-height: 30px;
-  padding: 0 12px;
+  min-height: calc(30px * var(--cpfb-scale));
+  padding: 0 calc(12px * var(--cpfb-scale));
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--cpfb-scale));
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
-  font: 12px/1 Arial, Helvetica, sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: calc(12px * var(--cpfb-scale));
+  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
+  transition:
+    padding 100ms linear,
+    min-height 100ms linear,
+    border-radius 100ms linear,
+    font-size 100ms linear,
+    gap 100ms linear;
 }
 
 .cpfb-button:hover,
@@ -49,8 +65,9 @@
 
 .cpfb-button-icon {
   display: inline-flex;
-  width: 14px;
-  height: 14px;
+  width: calc(14px * var(--cpfb-scale));
+  height: calc(14px * var(--cpfb-scale));
+  transition: width 100ms linear, height 100ms linear;
 }
 
 .cpfb-button-icon svg {
@@ -59,8 +76,9 @@
 }
 
 .cpfb-button-label {
-  font-size: 12px;
+  font-size: calc(12px * var(--cpfb-scale));
   line-height: 1;
+  transition: font-size 100ms linear;
 }
 
 .cpfb-button--positive {
