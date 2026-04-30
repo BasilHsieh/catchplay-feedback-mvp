@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.34";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.35";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -78,6 +78,7 @@
     overlayLogged: false,
     detectedOverlay: null,
     toolbarHost: null,
+    toolbarHostCard: null,
     toolbarHostPosition: "",
     toolbarHostPositionPriority: ""
   };
@@ -299,7 +300,6 @@
         return;
       }
 
-      state.activeCard = card;
       showToolbar(card);
     });
 
@@ -340,6 +340,12 @@
 
   function showToolbar(card) {
     clearTimeout(state.hideTimer);
+    if (state.activeCard !== card) {
+      moveToolbarToDocumentRoot();
+      state.detectedOverlay = null;
+      state.overlayLogged = false;
+    }
+    state.activeCard = card;
     setActiveCard(card);
     toolbar.hidden = false;
     highlight.hidden = false;
@@ -370,7 +376,7 @@
       state.lastCardRect = null;
       state.overlayLogged = false;
       state.detectedOverlay = null;
-      unpinPreviewVisible();
+      unpinPreviewVisible({ force: true });
       applyButtonSelectedState(null);
       toolbar.style.transform = "";
       toolbar.style.transformOrigin = "";
@@ -389,7 +395,11 @@
         return;
       }
 
-      if (!state.toolbarHovered && hasUsableCardRect(state.activeCard)) {
+      if (
+        !state.toolbarHovered &&
+        !getLockedPreview(state.activeCard) &&
+        hasUsableCardRect(state.activeCard)
+      ) {
         positionActiveUi(state.activeCard);
         state.lastCardRect = state.activeCard.getBoundingClientRect();
       }
@@ -420,6 +430,12 @@
   }
 
   function getPresentationRect(card) {
+    const lockedPreview = getLockedPreview(card);
+    if (lockedPreview) {
+      state.detectedOverlay = lockedPreview;
+      return lockedPreview.getBoundingClientRect();
+    }
+
     if (!card || !hasUsableCardRect(card)) {
       state.detectedOverlay = null;
       return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
@@ -457,11 +473,27 @@
     mountToolbarInPreview(preview);
   }
 
-  function unpinPreviewVisible() {
+  function unpinPreviewVisible(options = {}) {
+    if (options.force) {
+      moveToolbarToDocumentRoot();
+      return;
+    }
+
     syncToolbarHost();
   }
 
   function syncToolbarHost() {
+    const lockedPreview = getLockedPreview(state.activeCard);
+    if (lockedPreview) {
+      lockedPreview.append(toolbar);
+      toolbar.classList.add("cpfb-toolbar--preview-mounted");
+      return;
+    }
+
+    if (state.toolbarHost) {
+      moveToolbarToDocumentRoot();
+    }
+
     const preview = state.detectedOverlay;
     if (preview && preview.isConnected) {
       mountToolbarInPreview(preview);
@@ -479,6 +511,7 @@
 
     restoreToolbarHostPosition();
     state.toolbarHost = preview;
+    state.toolbarHostCard = state.activeCard;
     state.toolbarHostPosition = preview.style.getPropertyValue("position");
     state.toolbarHostPositionPriority = preview.style.getPropertyPriority("position");
 
@@ -512,8 +545,21 @@
     );
 
     state.toolbarHost = null;
+    state.toolbarHostCard = null;
     state.toolbarHostPosition = "";
     state.toolbarHostPositionPriority = "";
+  }
+
+  function getLockedPreview(card) {
+    if (
+      state.toolbarHost &&
+      state.toolbarHost.isConnected &&
+      state.toolbarHostCard === card
+    ) {
+      return state.toolbarHost;
+    }
+
+    return null;
   }
 
   function restoreInlineStyle(element, property, value, priority) {
@@ -602,8 +648,14 @@
 
     if (state.toolbarHost && toolbar.parentElement === state.toolbarHost) {
       const hostRect = state.toolbarHost.getBoundingClientRect();
-      left -= hostRect.left;
-      top -= hostRect.top;
+      const hostScaleX = state.toolbarHost.offsetWidth
+        ? hostRect.width / state.toolbarHost.offsetWidth
+        : 1;
+      const hostScaleY = state.toolbarHost.offsetHeight
+        ? hostRect.height / state.toolbarHost.offsetHeight
+        : 1;
+      left = (left - hostRect.left) / (hostScaleX || 1);
+      top = (top - hostRect.top) / (hostScaleY || 1);
     }
 
     toolbar.style.top = `${Math.round(top)}px`;
@@ -641,7 +693,6 @@
       return;
     }
 
-    state.activeCard = card;
     showToolbar(card);
   }
 
@@ -2024,7 +2075,7 @@
     state.toolbarHovered = false;
     state.activeCard = null;
     state.detectedOverlay = null;
-    unpinPreviewVisible();
+    unpinPreviewVisible({ force: true });
     if (state.activeVisualElement) {
       state.activeVisualElement.classList.remove("cpfb-active-card");
       state.activeVisualElement = null;

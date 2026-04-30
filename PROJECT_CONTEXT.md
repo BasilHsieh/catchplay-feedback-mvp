@@ -146,6 +146,11 @@ payload 要回答三件事：
 - 因為 preview 本身有 `transform`，toolbar 在 preview 內改用 `position: absolute`，並把 viewport 座標轉成相對 preview 的座標，避免位置被 transform 算兩次。
 - 補上 toolbar 背景 click / pointer event 的 propagation guard，避免 toolbar 變成 preview child 後，點在 toolbar 背景冒泡到 CATCHPLAY preview 造成導頁。
 
+**v0.1.35 穩定性修正**：
+- `v0.1.34` reparent 後仍每個 animation frame 重新偵測 overlay，會讓 toolbar 在 CATCHPLAY preview transform / transition 期間反覆換算位置，看起來一直跑來跑去。
+- 修法：toolbar 掛進 preview 後鎖定同一個 preview/card pair，不再每幀重新猜 overlay；mounted 狀態關掉 toolbar 自身 top/left transition，並把 preview transform scale 納入座標換算。
+- popup 的「啟用 Extension」切換改成 change 時立即寫入 `chrome.storage.sync`，避免使用者關掉但沒按「儲存」時看起來又自己開回來。
+
 **接手建議**：
 
 1. **先做診斷**，不要再盲改。在 [content.js](content.js) `pinPreviewVisible` 加 console.log 印出每層 ancestor 的 `getComputedStyle()` 各屬性，hover preview → 移到 toolbar，看哪個屬性、哪一層在變

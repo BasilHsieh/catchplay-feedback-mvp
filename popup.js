@@ -14,6 +14,7 @@ const form = {
 };
 
 let lastScanReport = null;
+let statusTimer = 0;
 
 form.extensionVersion.textContent = `v${chrome.runtime.getManifest().version}`;
 
@@ -37,9 +38,22 @@ chrome.storage.sync.get(
 
 form.devMode.addEventListener("change", () => {
   form.devSection.hidden = !form.devMode.checked;
+  saveSettings(form.devMode.checked ? "Developer mode enabled." : "Developer mode disabled.");
 });
 
-form.save.addEventListener("click", async () => {
+form.enabled.addEventListener("change", () => {
+  saveSettings(form.enabled.checked ? "Extension enabled." : "Extension disabled.");
+});
+
+form.debugMode.addEventListener("change", () => {
+  saveSettings(form.debugMode.checked ? "Detected cards shown." : "Detected cards hidden.");
+});
+
+form.save.addEventListener("click", () => {
+  saveSettings("Saved.");
+});
+
+async function saveSettings(statusText) {
   await chrome.storage.sync.set({
     userName: form.userName.value.trim(),
     endpointUrl: form.endpointUrl.value.trim(),
@@ -48,11 +62,12 @@ form.save.addEventListener("click", async () => {
     debugMode: form.debugMode.checked
   });
 
-  form.status.textContent = "Saved.";
-  window.setTimeout(() => {
+  form.status.textContent = statusText;
+  clearTimeout(statusTimer);
+  statusTimer = window.setTimeout(() => {
     form.status.textContent = "";
   }, 1800);
-});
+}
 
 form.scanPage.addEventListener("click", async () => {
   form.status.textContent = "Scanning current page...";

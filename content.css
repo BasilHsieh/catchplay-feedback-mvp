@@ -26,6 +26,7 @@
 
 .cpfb-toolbar--preview-mounted {
   position: absolute;
+  transition: none;
 }
 
 .cpfb-prompt {
