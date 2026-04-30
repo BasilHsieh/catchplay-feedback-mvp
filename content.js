@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.36";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.37";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -285,8 +285,12 @@
       findBestPoster(card)?.classList.add("cpfb-debug-card");
     }
 
-    card.addEventListener("mouseenter", () => {
+    card.addEventListener("mouseenter", (event) => {
       if (!state.enabled) {
+        return;
+      }
+
+      if (cursorOnToolbar(event.clientX, event.clientY)) {
         return;
       }
 
@@ -329,6 +333,10 @@
   }
 
   function showToolbar(card) {
+    if (state.toolbarHovered && state.activeCard && state.activeCard !== card) {
+      return;
+    }
+
     clearTimeout(state.hideTimer);
     if (state.activeCard !== card) {
       moveToolbarToDocumentRoot();
@@ -604,17 +612,19 @@
       for (const target of targets) {
         const rect = target.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) continue;
-        target.dispatchEvent(
-          new MouseEvent("mousemove", {
-            bubbles: true,
-            cancelable: true,
-            clientX: rect.left + Math.min(rect.width / 2, 30),
-            clientY: rect.top + Math.min(rect.height / 2, 30),
-            view: window
-          })
-        );
+        const cx = rect.left + Math.min(rect.width / 2, 30);
+        const cy = rect.top + Math.min(rect.height / 2, 30);
+        const eventInit = {
+          bubbles: true,
+          cancelable: true,
+          clientX: cx,
+          clientY: cy,
+          view: window
+        };
+        target.dispatchEvent(new MouseEvent("mousemove", eventInit));
+        target.dispatchEvent(new PointerEvent("pointermove", { ...eventInit, pointerType: "mouse" }));
       }
-    }, 100);
+    }, 80);
   }
 
   function stopKeepAlivePings() {
@@ -750,12 +760,29 @@
       return;
     }
 
+    if (cursorOnToolbar(event.clientX, event.clientY)) {
+      return;
+    }
+
     const card = findRegisteredCardFromTarget(event.target, event.clientX, event.clientY);
     if (!card) {
       return;
     }
 
     showToolbar(card);
+  }
+
+  function cursorOnToolbar(x, y) {
+    if (toolbar.hidden) return false;
+    const rect = toolbar.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    const pad = 4;
+    return (
+      x >= rect.left - pad &&
+      x <= rect.right + pad &&
+      y >= rect.top - pad &&
+      y <= rect.bottom + pad
+    );
   }
 
   function findRegisteredCardFromTarget(target, clientX, clientY) {
