@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.35";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.36";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -80,7 +80,8 @@
     toolbarHost: null,
     toolbarHostCard: null,
     toolbarHostPosition: "",
-    toolbarHostPositionPriority: ""
+    toolbarHostPositionPriority: "",
+    keepAliveInterval: 0
   };
 
   const toolbar = createToolbar();
@@ -134,6 +135,7 @@
   });
 
   document.addEventListener("pointerover", handlePointerOver, true);
+  document.addEventListener("mousemove", handleGlobalMouseMove, true);
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || message.type !== "CPF_SCAN_PAGE") {
@@ -223,18 +225,6 @@
     element.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-    });
-
-    element.addEventListener("mouseenter", () => {
-      clearTimeout(state.hideTimer);
-      state.toolbarHovered = true;
-      pinPreviewVisible();
-    });
-
-    element.addEventListener("mouseleave", () => {
-      state.toolbarHovered = false;
-      unpinPreviewVisible();
-      hideToolbarSoon();
     });
 
     return element;
@@ -381,6 +371,7 @@
       toolbar.style.transform = "";
       toolbar.style.transformOrigin = "";
       stopActiveTracking();
+      stopKeepAlivePings();
     }, 300);
   }
 
@@ -560,6 +551,77 @@
     }
 
     return null;
+  }
+
+  function handleGlobalMouseMove(event) {
+    if (toolbar.hidden) {
+      if (state.toolbarHovered) {
+        state.toolbarHovered = false;
+        stopKeepAlivePings();
+      }
+      return;
+    }
+
+    const rect = toolbar.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    const pad = 4;
+    const inside =
+      event.clientX >= rect.left - pad &&
+      event.clientX <= rect.right + pad &&
+      event.clientY >= rect.top - pad &&
+      event.clientY <= rect.bottom + pad;
+
+    if (inside === state.toolbarHovered) {
+      return;
+    }
+
+    state.toolbarHovered = inside;
+
+    if (inside) {
+      clearTimeout(state.hideTimer);
+      startKeepAlivePings();
+    } else {
+      stopKeepAlivePings();
+      hideToolbarSoon();
+    }
+  }
+
+  function startKeepAlivePings() {
+    if (state.keepAliveInterval) return;
+    state.keepAliveInterval = window.setInterval(() => {
+      if (!state.toolbarHovered) {
+        stopKeepAlivePings();
+        return;
+      }
+
+      const targets = [state.detectedOverlay, state.activeCard].filter(
+        (target) => target && target.isConnected
+      );
+
+      for (const target of targets) {
+        const rect = target.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        target.dispatchEvent(
+          new MouseEvent("mousemove", {
+            bubbles: true,
+            cancelable: true,
+            clientX: rect.left + Math.min(rect.width / 2, 30),
+            clientY: rect.top + Math.min(rect.height / 2, 30),
+            view: window
+          })
+        );
+      }
+    }, 100);
+  }
+
+  function stopKeepAlivePings() {
+    if (state.keepAliveInterval) {
+      clearInterval(state.keepAliveInterval);
+      state.keepAliveInterval = 0;
+    }
   }
 
   function restoreInlineStyle(element, property, value, priority) {
@@ -2076,6 +2138,7 @@
     state.activeCard = null;
     state.detectedOverlay = null;
     unpinPreviewVisible({ force: true });
+    stopKeepAlivePings();
     if (state.activeVisualElement) {
       state.activeVisualElement.classList.remove("cpfb-active-card");
       state.activeVisualElement = null;
