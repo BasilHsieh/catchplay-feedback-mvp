@@ -5,7 +5,6 @@ const form = {
   devMode: document.querySelector("#devMode"),
   devSection: document.querySelector("#devSection"),
   debugMode: document.querySelector("#debugMode"),
-  save: document.querySelector("#save"),
   scanPage: document.querySelector("#scanPage"),
   downloadScan: document.querySelector("#downloadScan"),
   status: document.querySelector("#status"),
@@ -36,7 +35,7 @@ chrome.storage.sync.get(
   }
 );
 
-// Toggles save immediately on change so users don't need to hit "儲存"
+// Toggles save immediately on change
 form.enabled.addEventListener("change", () => {
   saveSettings(form.enabled.checked ? "Extension 已啟用" : "Extension 已停用");
 });
@@ -50,9 +49,16 @@ form.debugMode.addEventListener("change", () => {
   saveSettings(form.debugMode.checked ? "顯示偵測卡片" : "隱藏偵測卡片");
 });
 
-form.save.addEventListener("click", () => {
-  saveSettings("已儲存");
-});
+// Text inputs debounce-save 500ms after typing stops
+let inputDebounce = 0;
+const debouncedSaveInput = () => {
+  clearTimeout(inputDebounce);
+  inputDebounce = window.setTimeout(() => {
+    saveSettings("已儲存");
+  }, 500);
+};
+form.userName.addEventListener("input", debouncedSaveInput);
+form.endpointUrl.addEventListener("input", debouncedSaveInput);
 
 async function saveSettings(statusText) {
   await chrome.storage.sync.set({
