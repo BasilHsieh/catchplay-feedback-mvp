@@ -5,7 +5,8 @@
 .cpfb-card-toolbar {
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 9999;
   display: flex;
   flex-direction: column;
@@ -27,7 +28,8 @@
 }
 
 .cpfb-card-host:hover > .cpfb-card-toolbar,
-.cpfb-card-host:focus-within > .cpfb-card-toolbar {
+.cpfb-card-host:focus-within > .cpfb-card-toolbar,
+.cpfb-card-host[data-state="open"] > .cpfb-card-toolbar {
   opacity: 1;
   pointer-events: auto;
 }
