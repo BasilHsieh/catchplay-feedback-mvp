@@ -14,6 +14,7 @@ const form = {
 };
 
 let lastScanReport = null;
+let statusTimer = 0;
 
 form.extensionVersion.textContent = `v${chrome.runtime.getManifest().version}`;
 
@@ -35,11 +36,25 @@ chrome.storage.sync.get(
   }
 );
 
-form.devMode.addEventListener("change", () => {
-  form.devSection.hidden = !form.devMode.checked;
+// Toggles save immediately on change so users don't need to hit "儲存"
+form.enabled.addEventListener("change", () => {
+  saveSettings(form.enabled.checked ? "Extension 已啟用" : "Extension 已停用");
 });
 
-form.save.addEventListener("click", async () => {
+form.devMode.addEventListener("change", () => {
+  form.devSection.hidden = !form.devMode.checked;
+  saveSettings(form.devMode.checked ? "開發者模式已開" : "開發者模式已關");
+});
+
+form.debugMode.addEventListener("change", () => {
+  saveSettings(form.debugMode.checked ? "顯示偵測卡片" : "隱藏偵測卡片");
+});
+
+form.save.addEventListener("click", () => {
+  saveSettings("已儲存");
+});
+
+async function saveSettings(statusText) {
   await chrome.storage.sync.set({
     userName: form.userName.value.trim(),
     endpointUrl: form.endpointUrl.value.trim(),
@@ -48,11 +63,12 @@ form.save.addEventListener("click", async () => {
     debugMode: form.debugMode.checked
   });
 
-  form.status.textContent = "Saved.";
-  window.setTimeout(() => {
+  form.status.textContent = statusText;
+  clearTimeout(statusTimer);
+  statusTimer = window.setTimeout(() => {
     form.status.textContent = "";
   }, 1800);
-});
+}
 
 form.scanPage.addEventListener("click", async () => {
   form.status.textContent = "Scanning current page...";
