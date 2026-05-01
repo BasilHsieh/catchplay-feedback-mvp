@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.2.3";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.2.4";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -288,20 +288,37 @@
 
   function findRadixHoverCardRoot(node) {
     if (!node || !node.querySelector) return null;
-    // Direct: the node itself wraps Radix hover card content
-    if (node.matches?.("[data-radix-popper-content-wrapper]")) return node;
-    // Nested: find within
-    const direct = node.querySelector?.("[data-radix-popper-content-wrapper]");
-    if (direct) return direct;
-    // Fallback: detect by Radix CSS variable presence in inline style
-    const candidates = node.querySelectorAll?.("*") || [];
-    for (const el of candidates) {
-      const style = el.getAttribute?.("style") || "";
-      if (style.includes("--radix-hover-card") || style.includes("--radix-popper")) {
-        return el.closest?.("[data-radix-popper-content-wrapper]") || el;
+
+    // Find the popper wrapper first
+    let popperWrapper = null;
+    if (node.matches?.("[data-radix-popper-content-wrapper]")) {
+      popperWrapper = node;
+    } else {
+      popperWrapper = node.querySelector?.("[data-radix-popper-content-wrapper]");
+    }
+
+    if (!popperWrapper) {
+      // Fallback: detect by Radix CSS var on inline style
+      const candidates = node.querySelectorAll?.("*") || [];
+      for (const el of candidates) {
+        const style = el.getAttribute?.("style") || "";
+        if (style.includes("--radix-hover-card") || style.includes("--radix-popper")) {
+          popperWrapper = el.closest?.("[data-radix-popper-content-wrapper]") || el;
+          break;
+        }
       }
     }
-    return null;
+
+    if (!popperWrapper) return null;
+
+    // Drill INTO the popper wrapper — find the Radix HoverCard Content element
+    // (it has data-state attribute since Radix manages its open/closed state)
+    const innerContent =
+      popperWrapper.querySelector("[data-state='open']") ||
+      popperWrapper.querySelector("[data-state]") ||
+      popperWrapper.firstElementChild;
+
+    return innerContent || popperWrapper;
   }
 
   function injectToolbarIntoPortal(portalRoot, card) {
