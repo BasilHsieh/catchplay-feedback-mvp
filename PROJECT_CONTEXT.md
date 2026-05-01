@@ -4,14 +4,14 @@
 
 ## 目前狀態
 
-- 版本：`0.1.19`
-- 這個資料夾不是 git repo，沒有 package manager、build step 或測試框架。
+- 版本：`0.2.7`（v0.2.x 架構大改寫，見下方「v0.2.x 架構」段）
+- 這個專案是 git repo（remote: `BasilHsieh/catchplay-feedback-mvp`），沒有 package manager、build step 或測試框架。
 - 主要檔案：
   - `manifest.json`：Chrome extension manifest。
-  - `content.js`：偵測 card、顯示 hover toolbar、組 feedback payload、產 scan report。
+  - `content.js`：偵測 card、**inject toolbar 進每張卡 DOM**、組 feedback payload、產 scan report、偵測 Radix HoverCard portal 並 inject 鏡像 toolbar。
   - `background.js`：有設定 Apps Script URL 時送出 payload。
-  - `popup.html` / `popup.js` / `popup.css`：設定 UI、掃描頁面、下載 scan JSON。
-  - `content.css`：注入 CATCHPLAY 頁面的 overlay/debug 樣式。
+  - `popup.html` / `popup.js` / `popup.css`：設定 UI（toggles 立即存、文字欄位 debounced auto-save，無 Save 按鈕），掃描頁面、下載 scan JSON。
+  - `content.css`：toolbar / debug 樣式，CSS `:hover` + Radix `data-state="open"` 觸發 toolbar 顯示。
 
 基本驗證指令：
 
@@ -75,8 +75,30 @@ payload 要回答三件事：
   - `List_ALL_CONTINUE_WATCHING`
   - `List_ALL_MY_DRAWER`
   - `List_ALL_RECENTLY_VIEWED`
-- 詳情頁 hover 偵測：`findRegisteredCardFromTarget` 多了座標 fallback (`findCardAtPoint`)。CATCHPLAY 詳情頁的卡片有 overlay sibling 攔截 pointer events，DOM 走父層找不到 registered card 時改用滑鼠座標判斷哪張 card rect 包含當前點。
-- 回饋工具消失邏輯：mouseleave 觸發時先檢查游標座標是否還在卡片區域內（含 `state.lastCardRect` 後備），CATCHPLAY 預覽動畫造成的「假性 leave」會被忽略。`state.toolbarHovered` flag 鎖住 hide 倒數，回饋工具被 hover 時不會消失。`requestAnimationFrame` 持續對齊回饋工具到卡片新位置（卡片放大時 follow）。
+- 詳情頁 hover 偵測：`findRegisteredCardFromTarget` 多了座標 fallback (`findCardAtPoint`)。CATCHPLAY 詳情頁的卡片有 overlay sibling 攔截 pointer events，DOM 走父層找不到 registered card 時改用滑鼠座標判斷哪張 card rect 包含當前點。**注意**：v0.2.0 整個重寫 toolbar 架構，不再用全域單一 toolbar + JS hover 追蹤，這段文字是 v0.1.x 時代的歷史脈絡。
+
+## v0.2.x 架構（toolbar inject + CSS hover）
+
+**v0.1.20 ~ v0.1.43 走錯方向**：用 documentElement 上單一 toolbar、JS 偵測 hover 動態算位置，撞 Swiper transform、React anchor 撐高、Radix HoverCard portal 等多重坑，繞 25 版沒解。**完整迭代軌跡保留在 [`codex/fix-preview-toolbar-stability`](https://github.com/BasilHsieh/catchplay-feedback-mvp/tree/codex/fix-preview-toolbar-stability) branch**，未來想做 case study 或回顧失敗模式可參考。
+
+**v0.2.0 重新架構**：
+
+1. **每張卡有自己的 toolbar**（在 scan 階段 `registerCard` 時直接 inject 進 card anchor 當 DOM child），不是 hover 時動態插。
+2. **顯示 / 隱藏靠 CSS** — `.cpfb-card-host:hover > .cpfb-card-toolbar` + `.cpfb-card-host[data-state="open"] > .cpfb-card-toolbar`。`data-state="open"` 是 Radix HoverCard 在 trigger 上設的，所以即使 cursor 已從 trigger 移到 preview portal，toolbar 還是顯示。
+3. **位置純 CSS** — `position: absolute; bottom: 8px; right: 8px;` 相對 card 自己。沒有 transform 補償地獄、沒有 viewport 座標換算。
+4. **Radix HoverCard preview 也注入 toolbar**：`portalObserver` 監聽 body subtree，新增節點是 `[data-radix-popper-content-wrapper]` 時，往內找 `[data-state="open"]`（Radix 真正追 hover 的元件），把 toolbar 也注入進去。
+5. **兩份 toolbar 共享狀態**：每個 toolbar 有 `data-card-state-key` 屬性，state 改變時 `syncAllToolbarsForKey` 一次更新所有 match 的 toolbar。
+6. **MutationObserver 守住**：每張卡有自己的 observer，被 React 拔掉就重 inject。
+
+**為什麼這次 work（前面 25 版不 work）**：
+
+| 之前架構 | v0.2.x 架構 |
+|---|---|
+| 單一全域 toolbar | 每張卡一份 toolbar（pre-injected） |
+| JS 算位置（Swiper transform 害死） | 純 CSS `position: absolute` 相對 card |
+| JS hover 偵測 race condition | CSS `:hover` 原生穩定 |
+| 跨 swiper / transform 補償 | 不需要 |
+| preview pop 時 toolbar 跑掉 | preview pop 時 portal 也注入一份 toolbar |
 
 ## Scan 工作流
 
@@ -119,52 +141,17 @@ payload 要回答三件事：
 - ~~**Extension 全域 on/off 開關**~~：v0.1.16 完成。把原本的 `enabled` (`Enable hover feedback`) 升級為 master kill switch，label 改為 `Enable extension`。Disabled 時：不掃描、不顯示 toolbar / highlight / debug panel、清掉所有卡片上的 debug class、scan 訊息回拒絕錯誤（`silenceUi()`）。`updateDebugPanel` 也跟著 master 走（master off → debug panel 強制隱藏）。
 - ~~**首頁 GTM list 命名變更 (`DEFAULT` → `BASIC`)**~~：v0.1.16 補上 `BASIC` 系列對應（`LIVE_TV` / `NEW_ARRIVAL_ALLBRAND` / `TOP_RANKING` / `MOST_POPULAR_ALLBRAND` / `CP_FREE_MOVIE` / `CP_FREE_SERIES`），並新增 `EDITORPICKS_3` (戲院看不到的好片) / `EDITORPICKS_5` (向經典致敬)。舊 `DEFAULT` 對應保留以防回滾。
 
-## 已知未解 bug（請接手 fix）
+## 已修 bug 紀錄
 
-### ~~🐛 CATCHPLAY preview 在 cursor 移到 toolbar 時淡出~~（v0.1.34 已修）
+### ✓ CATCHPLAY preview 在 cursor 移到 toolbar 時淡出（v0.2.0+ 已修）
 
-**症狀**：使用者 hover 卡片 → CATCHPLAY 跳出大張 hover preview（含 trailer + 標題 + IMDb + 描述）。使用者把 cursor 移向 preview 右下角的 feedback toolbar 想點按鈕時，**preview 開始淡出 / 變半透明**，視覺上很糟。
+**症狀**：v0.1.x 時代，cursor 移向 preview 內的 feedback toolbar 時 preview 整個淡出 / 收回。
 
-**根本原因**：toolbar 是 `documentElement.append()` 出來的元件，跟 CATCHPLAY 的 preview 不在同一個 DOM 子樹。cursor 從 preview → toolbar 時，瀏覽器對 preview 元件 fire `mouseleave` / pointer leave，CATCHPLAY 的 React 認為「使用者離開了」就觸發隱藏動畫。
+**根本原因**：CATCHPLAY 用 Radix UI HoverCard，preview 渲染在 body level 的 portal，與我們 documentElement 上的全域 toolbar 是 DOM 兄弟。cursor 從 preview portal → 全域 toolbar 跨出 React 追蹤的子樹 → onMouseLeave fire → preview unmount。
 
-**v0.1.32 嘗試（沒用）**：
-- 偵測到 preview overlay 後，hover toolbar 時用 `!important` 覆寫該 overlay 元件的 `opacity: 1` / `visibility: visible` / `pointer-events: auto`
-- 失敗原因：CSS opacity **從父層繼承**，CATCHPLAY 是在 overlay 的某個 ancestor 設 opacity:0，覆寫 overlay 自己沒用
+**修法**：v0.2.x 整個重寫架構，toolbar 變成卡片自己的 child + 偵測 Radix portal 同步注入鏡像 toolbar。詳見上方「v0.2.x 架構」段。
 
-**v0.1.33 嘗試（也沒用）**：
-- 從 detected overlay 一路 walk parent chain 到 body，每層都 `!important` 覆寫 opacity / visibility / pointer-events
-- 加上每 120ms dispatch 合成的 `mousemove` event 給 detected overlay 跟 active card
-- 仍然會淡出 — 表示 CATCHPLAY 用的不是這三個 CSS 屬性，可能是：
-  - `display: none`（但這通常配合別的）
-  - 直接 unmount React component（DOM 元件被移除）
-  - 用 `transform: scale(0)` 或 `clip-path`
-  - 在 preview 外層加一個 wrapper 元件控制顯示，我們沒抓到那層
-
-**v0.1.34 修正**：
-- 診斷確認：cursor 進 toolbar 後，detected preview 的 `isConnected` 變成 `false`，`getComputedStyle()` 回空值；不是 `opacity` / `visibility` / `pointer-events` / `display` / `transform` 單純被改掉，而是 quick-view preview 被 React unmount。
-- 修法：偵測到 preview overlay 時，把同一個 toolbar DOM node reparent 到 preview 內部當 child；沒有 active preview 或隱藏時再移回 `documentElement`。
-- 因為 preview 本身有 `transform`，toolbar 在 preview 內改用 `position: absolute`，並把 viewport 座標轉成相對 preview 的座標，避免位置被 transform 算兩次。
-- 補上 toolbar 背景 click / pointer event 的 propagation guard，避免 toolbar 變成 preview child 後，點在 toolbar 背景冒泡到 CATCHPLAY preview 造成導頁。
-
-**接手建議**：
-
-1. **先做診斷**，不要再盲改。在 [content.js](content.js) `pinPreviewVisible` 加 console.log 印出每層 ancestor 的 `getComputedStyle()` 各屬性，hover preview → 移到 toolbar，看哪個屬性、哪一層在變
-2. 或裝 Claude in Chrome extension（[anthropic.com/claude-in-chrome](https://www.anthropic.com/claude-in-chrome)），用 `mcp__Claude_in_Chrome__javascript_tool` 自動 hover、抓 mutation
-3. 找到實際 hide 機制後對症下藥。如果是 `display: none` → 覆寫 `display`；如果是 unmount → 換策略（例如把 toolbar 直接 inject 成 preview 子元件）；如果是 transform → 覆寫 transform
-
-**完全不同的解法**（如果 pin 走不通）：
-
-- **重 parent toolbar**：偵測到 preview overlay 後，把 toolbar element 從 `documentElement` 移到 preview overlay 內部當 child。這樣 cursor 在 toolbar 上時 DOM-wise 還在 preview 裡，不會 trigger mouseleave。但有 React re-render 把 toolbar 拔掉的風險，需要 MutationObserver 重新 attach。
-- **改 toolbar 位置**：徹底放 preview 外面（例如 preview 上方 8px 浮空），讓 cursor 路徑明確跨出 preview，preview 淡出沒關係 — 但 toolbar 跟 preview 視覺斷開、回到「兩層」問題。
-- **改互動模型**：toolbar 不是 hover 才出，改成卡片右上角永久顯示一個小 icon，點開才出按鈕（類似 Netflix）
-
-**相關 code 位置**：
-- [content.js](content.js) `pinPreviewVisible` / `unpinPreviewVisible` / `startKeepAlivePings`
-- [content.js](content.js) `findOverlayPreview` / `expandToOverlayRoot`（detected overlay 是這裡產生的）
-- [content.js](content.js) `positionToolbar`（toolbar 位置邏輯）
-- [content.css](content.css) `.cpfb-toolbar`（toolbar 樣式 / blur backdrop）
-
-**驗證方式**：reload extension + 重開 CATCHPLAY 分頁，hover 任何有 trailer preview 的卡（首頁「推薦給你」row 大部分都有），cursor 慢慢往 preview 右下角 toolbar 移動，preview 應該全程不淡出。
+**詳細迭代軌跡** (v0.1.20 ~ v0.1.43 共 25 個失敗版本)：見 `codex/fix-preview-toolbar-stability` branch + `DEV_LOG.md`。
 
 ---
 

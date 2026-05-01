@@ -2,7 +2,7 @@
 
 Hackathon 用的 Chrome Extension。在 CATCHPLAY 站內偵測影片 poster / card，使用者 hover 後顯示回饋按鈕，點擊後送出 JSON payload。
 
-目前版本：**v0.1.19**。
+目前版本：**v0.2.7**（v0.2.0 大改 toolbar 架構，見 [DEV_LOG.md](DEV_LOG.md) 跟 [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)）。
 
 兩種運作模式：
 - **沒設定 Apps Script URL**：payload 只印在瀏覽器 console，適合 debug。
@@ -42,9 +42,9 @@ Hackathon 用的 Chrome Extension。在 CATCHPLAY 站內偵測影片 poster / ca
 2. 打開 Developer mode
 3. Load unpacked → 選這個專案資料夾（含 `manifest.json` 那一層）
 4. 開 CATCHPLAY 頁面
-5. 點 extension icon，把 `Enable extension`（master 開關）跟 `Show detected cards` 打開
-6. hover 影片 poster，確認回饋工具跳出來（題目「喜歡這個推薦嗎？」+ 喜歡 / 不喜歡 兩顆按鈕）
-7. 點任一按鈕，DevTools console 看 payload
+5. 點 extension icon → 「啟用 Extension」toggle 預設打開（如沒打開請開）。debug / scan 工具收進「開發者模式」toggle 裡，要 debug 才打開
+6. hover 影片 poster，卡片右下角會出現「喜歡這個推薦嗎？」+ 喜歡 / 不喜歡 兩顆按鈕
+7. 點按鈕，按過的會記住狀態（綠/紅 filled）；DevTools console 看 payload
 
 ---
 
@@ -69,11 +69,13 @@ Hackathon 用的 Chrome Extension。在 CATCHPLAY 站內偵測影片 poster / ca
 
 ---
 
-## Payload schema（v0.1.19）
+## Payload schema（v0.2.x）
+
+v0.2.x 新增 `previousFeedbackType`：使用者「取消標記」（按已選按鈕變回未選）時 payload 會有 `feedbackType: "cleared"` + `previousFeedbackType: "relevant"` 或 `"not_relevant"`，下游可選擇忽略或當「取消事件」處理。
 
 ```json
 {
-  "extensionVersion": "0.1.19",
+  "extensionVersion": "0.2.7",
   "capturedAt": "2026-04-25T17:42:49.474Z",
   "user": "basil",
   "feedbackType": "relevant",
