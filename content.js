@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.2.2";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.2.3";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -69,7 +69,8 @@
     registeredCardCount: 0,
     cardObservers: new WeakMap(),
     scanTimer: 0,
-    toastTimer: 0
+    toastTimer: 0,
+    activeHoverCard: null
   };
 
   const debugPanel = createDebugPanel();
@@ -143,11 +144,30 @@
     subtree: true
   });
 
+  // Watch for Radix HoverCard portal mounting; inject toolbar into preview
+  const portalObserver = new MutationObserver((muts) => {
+    if (!state.enabled) return;
+    for (const m of muts) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        const previewRoot = findRadixHoverCardRoot(node);
+        if (previewRoot) {
+          injectToolbarIntoPortal(previewRoot, state.activeHoverCard);
+        }
+      }
+    }
+  });
+  portalObserver.observe(document.body, { childList: true, subtree: true });
+
   setInterval(scanForCards, 2500);
 
   function buildCardToolbar(card) {
     const element = document.createElement("div");
     element.className = "cpfb-card-toolbar";
+    const cardStateKey = computeCardStateKey(card);
+    if (cardStateKey) {
+      element.dataset.cardStateKey = cardStateKey;
+    }
 
     const prompt = document.createElement("div");
     prompt.className = "cpfb-card-prompt";
@@ -240,6 +260,10 @@
       card.style.position = "relative";
     }
 
+    card.addEventListener("mouseenter", () => {
+      state.activeHoverCard = card;
+    });
+
     injectToolbarIntoCard(card);
 
     // React may re-render and remove our toolbar — observe and re-inject
@@ -259,6 +283,39 @@
 
     const toolbar = buildCardToolbar(card);
     card.appendChild(toolbar);
+    refreshCardToolbar(card, toolbar);
+  }
+
+  function findRadixHoverCardRoot(node) {
+    if (!node || !node.querySelector) return null;
+    // Direct: the node itself wraps Radix hover card content
+    if (node.matches?.("[data-radix-popper-content-wrapper]")) return node;
+    // Nested: find within
+    const direct = node.querySelector?.("[data-radix-popper-content-wrapper]");
+    if (direct) return direct;
+    // Fallback: detect by Radix CSS variable presence in inline style
+    const candidates = node.querySelectorAll?.("*") || [];
+    for (const el of candidates) {
+      const style = el.getAttribute?.("style") || "";
+      if (style.includes("--radix-hover-card") || style.includes("--radix-popper")) {
+        return el.closest?.("[data-radix-popper-content-wrapper]") || el;
+      }
+    }
+    return null;
+  }
+
+  function injectToolbarIntoPortal(portalRoot, card) {
+    if (!portalRoot || !card) return;
+    if (portalRoot.querySelector(".cpfb-portal-toolbar")) return;
+
+    // Ensure portal root is positioned for absolute toolbar
+    if (getComputedStyle(portalRoot).position === "static") {
+      portalRoot.style.position = "relative";
+    }
+
+    const toolbar = buildCardToolbar(card);
+    toolbar.classList.add("cpfb-portal-toolbar");
+    portalRoot.appendChild(toolbar);
     refreshCardToolbar(card, toolbar);
   }
 
@@ -283,6 +340,36 @@
       applyToolbarSelectedState(tb, stored?.feedbackType || null);
     } catch (error) {
       console.warn("[CATCHPLAY Feedback MVP] state lookup failed", error);
+    }
+  }
+
+  function computeCardStateKey(card) {
+    if (!card) return "";
+    try {
+      const anchor = findAnchor(card);
+      const metadata = getCardMetadata(card);
+      const sectionInfo = getSectionInfo(card, metadata);
+      const contentHref = normalizeUrl(anchor?.getAttribute("href") || "");
+      const contentId = getUsefulGtmItemId(metadata.itemId) || deriveContentId(contentHref);
+      return buildStateKey({
+        pageType: derivePageType(location.href),
+        pageContextId: derivePageContextId(location.href),
+        sectionListName: sectionInfo.listName,
+        contentId
+      });
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function syncAllToolbarsForKey(stateKey, feedbackType) {
+    if (!stateKey) return;
+    const escaped = (window.CSS && window.CSS.escape) ? window.CSS.escape(stateKey) : stateKey;
+    const toolbars = document.querySelectorAll(
+      `.cpfb-card-toolbar[data-card-state-key="${escaped}"]`
+    );
+    for (const tb of toolbars) {
+      applyToolbarSelectedState(tb, feedbackType);
     }
   }
 
@@ -313,10 +400,10 @@
       payload.feedbackType = FEEDBACK_CLEARED_TYPE;
       payload.previousFeedbackType = clickedType;
       await setStoredFeedbackState(userName, stateKey, null);
-      applyToolbarSelectedState(toolbar, null);
+      syncAllToolbarsForKey(stateKey, null);
     } else {
       await setStoredFeedbackState(userName, stateKey, clickedType);
-      applyToolbarSelectedState(toolbar, clickedType);
+      syncAllToolbarsForKey(stateKey, clickedType);
     }
 
     console.log("[CATCHPLAY Feedback MVP] payload", payload);

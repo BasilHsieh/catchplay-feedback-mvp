@@ -33,6 +33,13 @@
   pointer-events: auto;
 }
 
+/* Portal toolbar inside Radix HoverCard preview — always visible while preview is open */
+.cpfb-portal-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 2147483647;
+}
+
 html.cpfb-disabled .cpfb-card-toolbar {
   display: none !important;
 }
