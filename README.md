@@ -184,6 +184,7 @@ function doPost(e) {
     new Date(),
     data.user,
     data.feedbackType,
+    data.previousFeedbackType || '',
     data.pageType,
     data.pageContextId,
     data.pageUrl,
@@ -212,12 +213,20 @@ function doPost(e) {
 ### Google Sheet 第一列
 
 ```text
-timestamp,user,feedbackType,pageType,pageContextId,pageUrl,pagePath,sectionTitle,sectionListName,sectionIndex,itemIndex,contentTitle,contentId,contentHref,contentType,contentVariant,contentLabels,posterUrl,confidence,debug
+timestamp,user,feedbackType,previousFeedbackType,pageType,pageContextId,pageUrl,pagePath,sectionTitle,sectionListName,sectionIndex,itemIndex,contentTitle,contentId,contentHref,contentType,contentVariant,contentLabels,posterUrl,confidence,debug
 ```
+
+`feedbackType` 可能是 `relevant` / `not_relevant` / `cleared`。`cleared` 代表使用者「取消了之前的標記」（例如本來標喜歡，再點一次喜歡取消），這時 `previousFeedbackType` 會是被取消的那種類型（`relevant` 或 `not_relevant`），可拿來判斷是「取消讚」還是「取消踩」。
 
 ### 分析時建議的 group key
 
 `(pageType, pageContextId, sectionListName)` — 把「使用者在哪個情境的哪個 row」分清楚。
+
+判斷使用者對 `(user, contentId)` 的「最終立場」時，建議：
+
+- 拿**最新一筆**那筆 row 的 `feedbackType` 當當前狀態
+- 如果是 `cleared` 代表使用者最後取消了標記，正/負面統計時應**排除**
+- 想看「曾經有過 feedback 但取消」這個訊號（值得追問為什麼），就 filter `feedbackType = 'cleared'` 看 `previousFeedbackType`
 
 ---
 
