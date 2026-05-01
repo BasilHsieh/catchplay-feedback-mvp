@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.40";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.41";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -706,8 +706,17 @@
     const idealLeft = rect.right - effectiveWidth - inset;
     const idealTop = rect.bottom - effectiveHeight - inset;
 
-    const left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
-    const top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
+    let left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
+    let top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
+
+    const cb = findFixedContainingBlock(toolbar);
+    if (cb) {
+      const cbRect = cb.getBoundingClientRect();
+      const cbScaleX = cb.offsetWidth ? cbRect.width / cb.offsetWidth : 1;
+      const cbScaleY = cb.offsetHeight ? cbRect.height / cb.offsetHeight : 1;
+      left = (left - cbRect.left) / (cbScaleX || 1);
+      top = (top - cbRect.top) / (cbScaleY || 1);
+    }
 
     toolbar.style.top = `${Math.round(top)}px`;
     toolbar.style.left = `${Math.round(left)}px`;
@@ -719,6 +728,23 @@
       toolbar.style.transform = "";
       toolbar.style.transformOrigin = "";
     }
+  }
+
+  function findFixedContainingBlock(element) {
+    let cur = element.parentElement;
+    while (cur && cur !== document.body && cur !== document.documentElement) {
+      const cs = getComputedStyle(cur);
+      if (
+        cs.transform !== "none" ||
+        cs.filter !== "none" ||
+        cs.perspective !== "none" ||
+        (cs.willChange && cs.willChange.includes("transform"))
+      ) {
+        return cur;
+      }
+      cur = cur.parentElement;
+    }
+    return null;
   }
 
   function attachToolbarToCard(card) {
