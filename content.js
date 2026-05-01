@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.37";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.38";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -291,6 +291,10 @@
       }
 
       if (cursorOnToolbar(event.clientX, event.clientY)) {
+        return;
+      }
+
+      if (cursorInActivePreview(event.clientX, event.clientY) && state.activeCard !== card) {
         return;
       }
 
@@ -764,6 +768,10 @@
       return;
     }
 
+    if (cursorInActivePreview(event.clientX, event.clientY)) {
+      return;
+    }
+
     const card = findRegisteredCardFromTarget(event.target, event.clientX, event.clientY);
     if (!card) {
       return;
@@ -777,6 +785,20 @@
     const rect = toolbar.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return false;
     const pad = 4;
+    return (
+      x >= rect.left - pad &&
+      x <= rect.right + pad &&
+      y >= rect.top - pad &&
+      y <= rect.bottom + pad
+    );
+  }
+
+  function cursorInActivePreview(x, y) {
+    const host = state.toolbarHost;
+    if (!host || !host.isConnected) return false;
+    const rect = host.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    const pad = 6;
     return (
       x >= rect.left - pad &&
       x <= rect.right + pad &&
