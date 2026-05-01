@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.42";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.43";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -691,7 +691,7 @@
     const effectiveHeight = toolbarHeight * scale;
 
     const idealLeft = rect.right - effectiveWidth - inset;
-    const idealTop = rect.bottom - effectiveHeight - inset;
+    const idealTop = rect.top + inset;
 
     let left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
     let top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
