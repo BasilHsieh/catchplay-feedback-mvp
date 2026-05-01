@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.39";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.40";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -81,7 +81,9 @@
     toolbarHostCard: null,
     toolbarHostPosition: "",
     toolbarHostPositionPriority: "",
-    keepAliveInterval: 0
+    keepAliveInterval: 0,
+    toolbarParentCard: null,
+    cardChildObserver: null
   };
 
   const toolbar = createToolbar();
@@ -356,6 +358,7 @@
     }
     applyButtonSelectedState(null);
     refreshToolbarSelectedState(card);
+    attachToolbarToCard(card);
     positionActiveUi(card);
     startActiveTracking();
   }
@@ -379,6 +382,7 @@
       state.overlayLogged = false;
       state.detectedOverlay = null;
       unpinPreviewVisible({ force: true });
+      detachToolbarFromCard();
       applyButtonSelectedState(null);
       toolbar.style.transform = "";
       toolbar.style.transformOrigin = "";
@@ -433,8 +437,21 @@
   }
 
   function getPresentationRect(card) {
-    state.detectedOverlay = null;
-    return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
+    if (!card || !hasUsableCardRect(card)) {
+      state.detectedOverlay = null;
+      return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
+    }
+
+    const cardRect = card.getBoundingClientRect();
+    const overlay = findOverlayPreview(card, cardRect);
+
+    if (!overlay) {
+      state.detectedOverlay = null;
+      return cardRect;
+    }
+
+    state.detectedOverlay = overlay;
+    return overlay.getBoundingClientRect();
   }
 
   function pinPreviewVisible() {
@@ -686,8 +703,8 @@
     const effectiveWidth = toolbarWidth * scale;
     const effectiveHeight = toolbarHeight * scale;
 
-    const idealLeft = rect.left + rect.width / 2 - effectiveWidth / 2;
-    const idealTop = rect.top + inset;
+    const idealLeft = rect.right - effectiveWidth - inset;
+    const idealTop = rect.bottom - effectiveHeight - inset;
 
     const left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
     const top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
@@ -701,6 +718,43 @@
     } else {
       toolbar.style.transform = "";
       toolbar.style.transformOrigin = "";
+    }
+  }
+
+  function attachToolbarToCard(card) {
+    if (!card || !card.isConnected) {
+      detachToolbarFromCard();
+      return;
+    }
+
+    if (state.toolbarParentCard !== card) {
+      detachToolbarFromCard();
+      state.toolbarParentCard = card;
+      state.cardChildObserver = new MutationObserver(() => {
+        if (
+          state.toolbarParentCard === card &&
+          card.isConnected &&
+          toolbar.parentElement !== card
+        ) {
+          card.appendChild(toolbar);
+        }
+      });
+      state.cardChildObserver.observe(card, { childList: true });
+    }
+
+    if (toolbar.parentElement !== card) {
+      card.appendChild(toolbar);
+    }
+  }
+
+  function detachToolbarFromCard() {
+    if (state.cardChildObserver) {
+      state.cardChildObserver.disconnect();
+      state.cardChildObserver = null;
+    }
+    state.toolbarParentCard = null;
+    if (toolbar.parentElement !== document.documentElement) {
+      document.documentElement.appendChild(toolbar);
     }
   }
 
@@ -2145,6 +2199,7 @@
     state.activeCard = null;
     state.detectedOverlay = null;
     unpinPreviewVisible({ force: true });
+    detachToolbarFromCard();
     stopKeepAlivePings();
     if (state.activeVisualElement) {
       state.activeVisualElement.classList.remove("cpfb-active-card");
