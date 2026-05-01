@@ -13,18 +13,8 @@
           <h1>CATCHPLAY Feedback</h1>
           <span id="extensionVersion" class="version-badge" aria-label="Extension version"></span>
         </div>
-        <p>Recommendation feedback MVP</p>
+        <p class="subtitle">Recommendation feedback MVP</p>
       </header>
-
-      <label class="field">
-        <span>你是誰？</span>
-        <input id="userName" type="text" autocomplete="off" placeholder="想留名字嗎？選填，例如 Basil">
-      </label>
-
-      <label class="field">
-        <span>Apps Script URL</span>
-        <input id="endpointUrl" type="url" placeholder="https://script.google.com/...">
-      </label>
 
       <div class="switch-row switch-row--master">
         <span class="switch-label">啟用 Extension</span>
@@ -33,6 +23,13 @@
           <span class="switch-track"><span class="switch-thumb"></span></span>
         </label>
       </div>
+
+      <button id="save" class="primary" type="button">儲存</button>
+
+      <label class="field">
+        <span>你是誰？</span>
+        <input id="userName" type="text" autocomplete="off" placeholder="想留個名字嗎？選填">
+      </label>
 
       <div class="switch-row">
         <span class="switch-label">開發者模式</span>
@@ -43,6 +40,11 @@
       </div>
 
       <section id="devSection" class="dev-section" hidden>
+        <label class="field">
+          <span>Apps Script URL</span>
+          <input id="endpointUrl" type="url" placeholder="https://script.google.com/...">
+        </label>
+
         <div class="switch-row">
           <span class="switch-label">頁面顯示偵測到的卡片</span>
           <label class="switch">
@@ -56,7 +58,6 @@
         <textarea id="scanOutput" class="scan-output" readonly placeholder="Page scan JSON will appear here."></textarea>
       </section>
 
-      <button id="save" type="button">儲存</button>
       <p id="status" class="status" role="status"></p>
     </main>
 
