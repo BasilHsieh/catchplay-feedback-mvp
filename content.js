@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.38";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.39";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -433,38 +433,8 @@
   }
 
   function getPresentationRect(card) {
-    const lockedPreview = getLockedPreview(card);
-    if (lockedPreview) {
-      state.detectedOverlay = lockedPreview;
-      return lockedPreview.getBoundingClientRect();
-    }
-
-    if (!card || !hasUsableCardRect(card)) {
-      state.detectedOverlay = null;
-      return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
-    }
-
-    const cardRect = card.getBoundingClientRect();
-    const overlay = findOverlayPreview(card, cardRect);
-
-    if (!overlay) {
-      state.detectedOverlay = null;
-      return cardRect;
-    }
-
-    state.detectedOverlay = overlay;
-
-    if (!state.overlayLogged) {
-      state.overlayLogged = true;
-      console.log("[CATCHPLAY Feedback MVP] preview overlay detected", {
-        tag: overlay.tagName.toLowerCase(),
-        className: typeof overlay.className === "string" ? overlay.className.slice(0, 200) : "",
-        rect: overlay.getBoundingClientRect(),
-        cardRect
-      });
-    }
-
-    return overlay.getBoundingClientRect();
+    state.detectedOverlay = null;
+    return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
   }
 
   function pinPreviewVisible() {
@@ -716,23 +686,11 @@
     const effectiveWidth = toolbarWidth * scale;
     const effectiveHeight = toolbarHeight * scale;
 
-    const idealLeft = rect.right - effectiveWidth - inset;
-    const idealTop = rect.bottom - effectiveHeight - inset;
+    const idealLeft = rect.left + rect.width / 2 - effectiveWidth / 2;
+    const idealTop = rect.top + inset;
 
-    let left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
-    let top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
-
-    if (state.toolbarHost && toolbar.parentElement === state.toolbarHost) {
-      const hostRect = state.toolbarHost.getBoundingClientRect();
-      const hostScaleX = state.toolbarHost.offsetWidth
-        ? hostRect.width / state.toolbarHost.offsetWidth
-        : 1;
-      const hostScaleY = state.toolbarHost.offsetHeight
-        ? hostRect.height / state.toolbarHost.offsetHeight
-        : 1;
-      left = (left - hostRect.left) / (hostScaleX || 1);
-      top = (top - hostRect.top) / (hostScaleY || 1);
-    }
+    const left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
+    const top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
 
     toolbar.style.top = `${Math.round(top)}px`;
     toolbar.style.left = `${Math.round(left)}px`;
