@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.41";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.42";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -437,21 +437,8 @@
   }
 
   function getPresentationRect(card) {
-    if (!card || !hasUsableCardRect(card)) {
-      state.detectedOverlay = null;
-      return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
-    }
-
-    const cardRect = card.getBoundingClientRect();
-    const overlay = findOverlayPreview(card, cardRect);
-
-    if (!overlay) {
-      state.detectedOverlay = null;
-      return cardRect;
-    }
-
-    state.detectedOverlay = overlay;
-    return overlay.getBoundingClientRect();
+    state.detectedOverlay = null;
+    return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
   }
 
   function pinPreviewVisible() {
