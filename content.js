@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.33";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.2.0";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -67,26 +67,15 @@
     registeredCards: new WeakSet(),
     registeredCardElements: new Set(),
     registeredCardCount: 0,
-    activeCard: null,
-    activeVisualElement: null,
-    hideTimer: 0,
+    cardObservers: new WeakMap(),
     scanTimer: 0,
-    toastTimer: 0,
-    trackingRaf: 0,
-    toolbarHovered: false,
-    lastCardRect: null,
-    overlayLogged: false,
-    detectedOverlay: null,
-    pinnedAncestors: null,
-    keepAliveInterval: 0
+    toastTimer: 0
   };
 
-  const toolbar = createToolbar();
-  const highlight = createHighlight();
   const debugPanel = createDebugPanel();
   const toast = createToast();
 
-  document.documentElement.append(highlight, toolbar, debugPanel, toast);
+  document.documentElement.append(debugPanel, toast);
 
   chrome.storage.sync.get(
     {
@@ -107,6 +96,7 @@
       if (!state.enabled) {
         silenceUi();
       } else {
+        unsilenceUi();
         updateDebugPanel();
       }
       scheduleScan();
@@ -118,20 +108,6 @@
       scheduleScan();
     }
   });
-
-  window.addEventListener("scroll", () => {
-    if (state.activeCard && !toolbar.hidden) {
-      positionActiveUi(state.activeCard);
-    }
-  }, { passive: true });
-
-  window.addEventListener("resize", () => {
-    if (state.activeCard && !toolbar.hidden) {
-      positionActiveUi(state.activeCard);
-    }
-  });
-
-  document.addEventListener("pointerover", handlePointerOver, true);
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || message.type !== "CPF_SCAN_PAGE") {
@@ -169,58 +145,43 @@
 
   setInterval(scanForCards, 2500);
 
-  function createToolbar() {
+  function buildCardToolbar(card) {
     const element = document.createElement("div");
-    element.className = "cpfb-toolbar";
-    element.hidden = true;
+    element.className = "cpfb-card-toolbar";
 
     const prompt = document.createElement("div");
-    prompt.className = "cpfb-prompt";
+    prompt.className = "cpfb-card-prompt";
     prompt.textContent = FEEDBACK_QUESTION;
     element.append(prompt);
 
     const buttonRow = document.createElement("div");
-    buttonRow.className = "cpfb-buttons";
+    buttonRow.className = "cpfb-card-buttons";
 
     for (const option of FEEDBACK_OPTIONS) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `cpfb-button cpfb-button--${option.tone}`;
+      button.className = `cpfb-card-button cpfb-card-button--${option.tone}`;
       button.dataset.feedbackType = option.type;
       button.title = option.label;
       button.innerHTML =
-        `<span class="cpfb-button-icon">${FEEDBACK_ICONS[option.tone]}</span>` +
-        `<span class="cpfb-button-label">${option.label}</span>`;
+        `<span class="cpfb-card-icon">${FEEDBACK_ICONS[option.tone]}</span>` +
+        `<span class="cpfb-card-label">${option.label}</span>`;
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
         button.blur();
-        submitFeedback(option.type);
+        submitFeedback(card, element, option.type);
       });
       buttonRow.append(button);
     }
 
     element.append(buttonRow);
 
-    element.addEventListener("mouseenter", () => {
-      clearTimeout(state.hideTimer);
-      state.toolbarHovered = true;
-      pinPreviewVisible();
+    // Stop card-level handlers (e.g., link click) bubbling from toolbar
+    ["pointerdown", "pointerup", "mousedown", "mouseup", "click"].forEach((type) => {
+      element.addEventListener(type, (event) => event.stopPropagation());
     });
 
-    element.addEventListener("mouseleave", () => {
-      state.toolbarHovered = false;
-      unpinPreviewVisible();
-      hideToolbarSoon();
-    });
-
-    return element;
-  }
-
-  function createHighlight() {
-    const element = document.createElement("div");
-    element.className = "cpfb-highlight";
-    element.hidden = true;
     return element;
   }
 
@@ -272,414 +233,77 @@
       findBestPoster(card)?.classList.add("cpfb-debug-card");
     }
 
-    card.addEventListener("mouseenter", () => {
-      if (!state.enabled) {
-        return;
-      }
+    card.classList.add("cpfb-card-host");
 
-      state.activeCard = card;
-      showToolbar(card);
+    // Ensure card is positioned so toolbar's absolute layout is relative to it
+    if (getComputedStyle(card).position === "static") {
+      card.style.position = "relative";
+    }
+
+    injectToolbarIntoCard(card);
+
+    // React may re-render and remove our toolbar — observe and re-inject
+    const observer = new MutationObserver(() => {
+      if (!card.isConnected) return;
+      if (!card.querySelector(":scope > .cpfb-card-toolbar")) {
+        injectToolbarIntoCard(card);
+      }
     });
-
-    card.addEventListener("mouseleave", (event) => {
-      handleCardMouseLeave(event, card);
-    });
+    observer.observe(card, { childList: true });
+    state.cardObservers.set(card, observer);
   }
 
-  function handleCardMouseLeave(event, card) {
-    if (state.activeCard !== card) {
-      return;
-    }
+  function injectToolbarIntoCard(card) {
+    if (!card || !card.isConnected) return;
+    if (card.querySelector(":scope > .cpfb-card-toolbar")) return;
 
-    if (cursorStillInCardRegion(event.clientX, event.clientY, card)) {
-      return;
-    }
-
-    hideToolbarSoon();
+    const toolbar = buildCardToolbar(card);
+    card.appendChild(toolbar);
+    refreshCardToolbar(card, toolbar);
   }
 
-  function cursorStillInCardRegion(x, y, card) {
-    const rect = hasUsableCardRect(card)
-      ? card.getBoundingClientRect()
-      : state.lastCardRect;
+  async function refreshCardToolbar(card, toolbar) {
+    const tb = toolbar || card.querySelector(":scope > .cpfb-card-toolbar");
+    if (!tb) return;
 
-    if (!rect) {
-      return false;
-    }
-
-    const pad = 12;
-    return (
-      x >= rect.left - pad &&
-      x <= rect.right + pad &&
-      y >= rect.top - pad &&
-      y <= rect.bottom + pad
-    );
-  }
-
-  function showToolbar(card) {
-    clearTimeout(state.hideTimer);
-    setActiveCard(card);
-    toolbar.hidden = false;
-    highlight.hidden = false;
-    if (hasUsableCardRect(card)) {
-      state.lastCardRect = card.getBoundingClientRect();
-    }
-    applyButtonSelectedState(null);
-    refreshToolbarSelectedState(card);
-    positionActiveUi(card);
-    startActiveTracking();
-  }
-
-  function hideToolbarSoon() {
-    if (state.toolbarHovered) {
-      return;
-    }
-
-    clearTimeout(state.hideTimer);
-    state.hideTimer = window.setTimeout(() => {
-      if (state.toolbarHovered) {
-        return;
-      }
-
-      toolbar.hidden = true;
-      highlight.hidden = true;
-      setActiveCard(null);
-      state.activeCard = null;
-      state.lastCardRect = null;
-      state.overlayLogged = false;
-      state.detectedOverlay = null;
-      unpinPreviewVisible();
-      applyButtonSelectedState(null);
-      toolbar.style.transform = "";
-      toolbar.style.transformOrigin = "";
-      stopActiveTracking();
-    }, 300);
-  }
-
-  function startActiveTracking() {
-    if (state.trackingRaf) {
-      return;
-    }
-
-    const tick = () => {
-      if (toolbar.hidden || !state.activeCard) {
-        state.trackingRaf = 0;
-        return;
-      }
-
-      if (!state.toolbarHovered && hasUsableCardRect(state.activeCard)) {
-        positionActiveUi(state.activeCard);
-        state.lastCardRect = state.activeCard.getBoundingClientRect();
-      }
-
-      state.trackingRaf = requestAnimationFrame(tick);
-    };
-
-    state.trackingRaf = requestAnimationFrame(tick);
-  }
-
-  function hasUsableCardRect(card) {
-    const rect = card?.getBoundingClientRect?.();
-    return Boolean(rect && rect.width > 4 && rect.height > 4);
-  }
-
-  function stopActiveTracking() {
-    if (state.trackingRaf) {
-      cancelAnimationFrame(state.trackingRaf);
-      state.trackingRaf = 0;
-    }
-  }
-
-  function positionActiveUi(card) {
-    const rect = getPresentationRect(card);
-    positionHighlight(rect);
-    positionToolbar(rect);
-  }
-
-  function getPresentationRect(card) {
-    if (!card || !hasUsableCardRect(card)) {
-      state.detectedOverlay = null;
-      return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
-    }
-
-    const cardRect = card.getBoundingClientRect();
-    const overlay = findOverlayPreview(card, cardRect);
-
-    if (!overlay) {
-      state.detectedOverlay = null;
-      return cardRect;
-    }
-
-    state.detectedOverlay = overlay;
-
-    if (!state.overlayLogged) {
-      state.overlayLogged = true;
-      console.log("[CATCHPLAY Feedback MVP] preview overlay detected", {
-        tag: overlay.tagName.toLowerCase(),
-        className: typeof overlay.className === "string" ? overlay.className.slice(0, 200) : "",
-        rect: overlay.getBoundingClientRect(),
-        cardRect
+    try {
+      const { userName } = await chrome.storage.sync.get(["userName"]);
+      const anchor = findAnchor(card);
+      const metadata = getCardMetadata(card);
+      const sectionInfo = getSectionInfo(card, metadata);
+      const contentHref = normalizeUrl(anchor?.getAttribute("href") || "");
+      const contentId = getUsefulGtmItemId(metadata.itemId) || deriveContentId(contentHref);
+      const stateKey = buildStateKey({
+        pageType: derivePageType(location.href),
+        pageContextId: derivePageContextId(location.href),
+        sectionListName: sectionInfo.listName,
+        contentId
       });
-    }
-
-    return overlay.getBoundingClientRect();
-  }
-
-  function pinPreviewVisible() {
-    const preview = state.detectedOverlay;
-    if (!preview || !preview.isConnected || state.pinnedAncestors) {
-      return;
-    }
-
-    const pinned = [];
-    let current = preview;
-    let depth = 0;
-    while (current && current !== document.body && current !== document.documentElement && depth < 16) {
-      pinned.push({
-        element: current,
-        opacity: current.style.getPropertyValue("opacity"),
-        opacityPriority: current.style.getPropertyPriority("opacity"),
-        visibility: current.style.getPropertyValue("visibility"),
-        visibilityPriority: current.style.getPropertyPriority("visibility"),
-        pointerEvents: current.style.getPropertyValue("pointer-events"),
-        pointerEventsPriority: current.style.getPropertyPriority("pointer-events")
-      });
-      current.style.setProperty("opacity", "1", "important");
-      current.style.setProperty("visibility", "visible", "important");
-      current.style.setProperty("pointer-events", "auto", "important");
-      current = current.parentElement;
-      depth += 1;
-    }
-
-    state.pinnedAncestors = pinned;
-    startKeepAlivePings();
-  }
-
-  function unpinPreviewVisible() {
-    stopKeepAlivePings();
-
-    const pinned = state.pinnedAncestors;
-    if (!pinned) {
-      return;
-    }
-
-    for (const saved of pinned) {
-      if (!saved.element.isConnected) continue;
-      restoreInlineStyle(saved.element, "opacity", saved.opacity, saved.opacityPriority);
-      restoreInlineStyle(saved.element, "visibility", saved.visibility, saved.visibilityPriority);
-      restoreInlineStyle(saved.element, "pointer-events", saved.pointerEvents, saved.pointerEventsPriority);
-    }
-
-    state.pinnedAncestors = null;
-  }
-
-  function startKeepAlivePings() {
-    if (state.keepAliveInterval) return;
-    state.keepAliveInterval = window.setInterval(() => {
-      if (!state.toolbarHovered) {
-        stopKeepAlivePings();
-        return;
-      }
-      const target = state.detectedOverlay || state.activeCard;
-      if (!target || !target.isConnected) return;
-
-      const rect = target.getBoundingClientRect();
-      const event = new MouseEvent("mousemove", {
-        bubbles: true,
-        cancelable: true,
-        clientX: rect.left + Math.min(rect.width / 2, 20),
-        clientY: rect.top + Math.min(rect.height / 2, 20),
-        view: window
-      });
-      target.dispatchEvent(event);
-    }, 120);
-  }
-
-  function stopKeepAlivePings() {
-    if (state.keepAliveInterval) {
-      clearInterval(state.keepAliveInterval);
-      state.keepAliveInterval = 0;
+      const stored = await getStoredFeedbackState(userName || "", stateKey);
+      applyToolbarSelectedState(tb, stored?.feedbackType || null);
+    } catch (error) {
+      console.warn("[CATCHPLAY Feedback MVP] state lookup failed", error);
     }
   }
 
-  function restoreInlineStyle(element, property, value, priority) {
-    if (value) {
-      element.style.setProperty(property, value, priority || "");
-    } else {
-      element.style.removeProperty(property);
-    }
-  }
-
-  function findOverlayPreview(card, cardRect) {
-    const cx = cardRect.left + cardRect.width / 2;
-    const cy = cardRect.top + cardRect.height / 2;
-
-    const stack = document.elementsFromPoint(cx, cy);
-    for (const element of stack) {
-      if (!element || !element.isConnected) continue;
-      if (element === toolbar || toolbar.contains(element)) continue;
-      if (element === highlight || highlight.contains(element)) continue;
-      if (element === debugPanel || debugPanel.contains(element)) continue;
-      if (element === toast || toast.contains(element)) continue;
-      if (element === card || card.contains(element) || element.contains(card)) continue;
-      if (element === document.body || element === document.documentElement) continue;
-
-      const rect = element.getBoundingClientRect();
-      if (rect.width <= cardRect.width && rect.height <= cardRect.height) continue;
-      if (rect.width > window.innerWidth * 0.92) continue;
-      if (rect.height > window.innerHeight * 0.95) continue;
-
-      return expandToOverlayRoot(element, card);
-    }
-
-    return null;
-  }
-
-  function expandToOverlayRoot(element, card) {
-    const cardRect = card.getBoundingClientRect();
-    const widthCeiling = Math.min(window.innerWidth * 0.92, cardRect.width * 2.5);
-    let best = element;
-    let bestRect = best.getBoundingClientRect();
-    let current = element.parentElement;
-
-    while (current && current !== document.body && current !== document.documentElement) {
-      if (current.contains(card)) break;
-
-      const rect = current.getBoundingClientRect();
-      if (rect.width > widthCeiling) break;
-      if (rect.height > window.innerHeight * 0.95) break;
-      if (rect.width > bestRect.width * 1.4) break;
-
-      best = current;
-      bestRect = rect;
-      current = current.parentElement;
-    }
-
-    return best;
-  }
-
-  function positionHighlight(rect) {
-    const padding = 3;
-
-    highlight.style.top = `${Math.round(rect.top - padding)}px`;
-    highlight.style.left = `${Math.round(rect.left - padding)}px`;
-    highlight.style.width = `${Math.round(rect.width + padding * 2)}px`;
-    highlight.style.height = `${Math.round(rect.height + padding * 2)}px`;
-  }
-
-  function positionToolbar(rect) {
-    const toolbarWidth = toolbar.offsetWidth || 200;
-    const toolbarHeight = toolbar.offsetHeight || 80;
-    const inset = 8;
-
-    const fitWidth = rect.width - inset * 2;
-    const scale = fitWidth > 0 && fitWidth < toolbarWidth
-      ? clamp(fitWidth / toolbarWidth, 0.5, 1)
-      : 1;
-
-    const effectiveWidth = toolbarWidth * scale;
-    const effectiveHeight = toolbarHeight * scale;
-
-    const idealLeft = rect.right - effectiveWidth - inset;
-    const idealTop = rect.bottom - effectiveHeight - inset;
-
-    const left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
-    const top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
-
-    toolbar.style.top = `${Math.round(top)}px`;
-    toolbar.style.left = `${Math.round(left)}px`;
-
-    if (scale < 1) {
-      toolbar.style.transform = `scale(${scale.toFixed(3)})`;
-      toolbar.style.transformOrigin = "top left";
-    } else {
-      toolbar.style.transform = "";
-      toolbar.style.transformOrigin = "";
-    }
-  }
-
-  function setActiveCard(card) {
-    state.activeVisualElement?.classList.remove("cpfb-active-card");
-
-    if (!card) {
-      state.activeVisualElement = null;
-      return;
-    }
-
-    const visualElement = findBestPoster(card) || card;
-    visualElement.classList.add("cpfb-active-card");
-    state.activeVisualElement = visualElement;
-  }
-
-  function handlePointerOver(event) {
-    if (!state.enabled || toolbar.contains(event.target)) {
-      return;
-    }
-
-    const card = findRegisteredCardFromTarget(event.target, event.clientX, event.clientY);
-    if (!card) {
-      return;
-    }
-
-    state.activeCard = card;
-    showToolbar(card);
-  }
-
-  function findRegisteredCardFromTarget(target, clientX, clientY) {
-    let current = target instanceof Element ? target : null;
-
-    while (current && current !== document.documentElement) {
-      if (state.registeredCards.has(current)) {
-        return current;
-      }
-
-      current = current.parentElement;
-    }
-
-    for (const card of state.registeredCardElements) {
-      if (card.contains(target)) {
-        return card;
+  function applyToolbarSelectedState(toolbar, feedbackType) {
+    if (!toolbar) return;
+    const buttons = toolbar.querySelectorAll(".cpfb-card-button");
+    for (const button of buttons) {
+      if (feedbackType && button.dataset.feedbackType === feedbackType) {
+        button.classList.add("cpfb-card-button--selected");
+      } else {
+        button.classList.remove("cpfb-card-button--selected");
       }
     }
-
-    if (typeof clientX === "number" && typeof clientY === "number") {
-      return findCardAtPoint(clientX, clientY);
-    }
-
-    return null;
   }
 
-  function findCardAtPoint(x, y) {
-    let best = null;
-    let bestArea = Infinity;
 
-    for (const card of state.registeredCardElements) {
-      const rect = getVisibleRect(card);
-      if (rect.width <= 0 || rect.height <= 0) {
-        continue;
-      }
+  async function submitFeedback(card, toolbar, clickedType) {
+    if (!state.enabled) return;
+    if (!card) return;
 
-      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-        continue;
-      }
-
-      const area = rect.width * rect.height;
-      if (area < bestArea) {
-        best = card;
-        bestArea = area;
-      }
-    }
-
-    return best;
-  }
-
-  async function submitFeedback(clickedType) {
-    if (!state.activeCard) {
-      showToast("No active card detected.");
-      return;
-    }
-
-    const payload = await buildPayload(state.activeCard, clickedType);
+    const payload = await buildPayload(card, clickedType);
     const stateKey = buildStateKey(payload);
     const userName = payload.user || "";
     const previousEntry = await getStoredFeedbackState(userName, stateKey);
@@ -689,10 +313,10 @@
       payload.feedbackType = FEEDBACK_CLEARED_TYPE;
       payload.previousFeedbackType = clickedType;
       await setStoredFeedbackState(userName, stateKey, null);
-      applyButtonSelectedState(null);
+      applyToolbarSelectedState(toolbar, null);
     } else {
       await setStoredFeedbackState(userName, stateKey, clickedType);
-      applyButtonSelectedState(clickedType);
+      applyToolbarSelectedState(toolbar, clickedType);
     }
 
     console.log("[CATCHPLAY Feedback MVP] payload", payload);
@@ -759,51 +383,6 @@
     }
 
     await chrome.storage.local.set({ [storageKey]: map });
-  }
-
-  function applyButtonSelectedState(feedbackType) {
-    const buttons = toolbar.querySelectorAll(".cpfb-button");
-    for (const button of buttons) {
-      if (feedbackType && button.dataset.feedbackType === feedbackType) {
-        button.classList.add("cpfb-button--selected");
-      } else {
-        button.classList.remove("cpfb-button--selected");
-      }
-    }
-  }
-
-  async function refreshToolbarSelectedState(card) {
-    if (!card) {
-      applyButtonSelectedState(null);
-      return;
-    }
-
-    try {
-      const { userName } = await chrome.storage.sync.get(["userName"]);
-      const anchor = findAnchor(card);
-      const metadata = getCardMetadata(card);
-      const sectionInfo = getSectionInfo(card, metadata);
-      const contentHref = normalizeUrl(anchor?.getAttribute("href") || "");
-      const contentId = getUsefulGtmItemId(metadata.itemId) || deriveContentId(contentHref);
-      const stateKey = buildStateKey({
-        pageType: derivePageType(location.href),
-        pageContextId: derivePageContextId(location.href),
-        sectionListName: sectionInfo.listName,
-        contentId
-      });
-
-      if (state.activeCard !== card) {
-        return;
-      }
-
-      const stored = await getStoredFeedbackState(userName || "", stateKey);
-      if (state.activeCard !== card) {
-        return;
-      }
-      applyButtonSelectedState(stored?.feedbackType || null);
-    } catch (error) {
-      console.warn("[CATCHPLAY Feedback MVP] state lookup failed", error);
-    }
   }
 
   async function buildPayload(card, feedbackType) {
@@ -1998,17 +1577,8 @@
   }
 
   function silenceUi() {
-    toolbar.hidden = true;
-    highlight.hidden = true;
     debugPanel.hidden = true;
-    state.toolbarHovered = false;
-    state.activeCard = null;
-    state.detectedOverlay = null;
-    unpinPreviewVisible();
-    if (state.activeVisualElement) {
-      state.activeVisualElement.classList.remove("cpfb-active-card");
-      state.activeVisualElement = null;
-    }
+    document.documentElement.classList.add("cpfb-disabled");
     for (const card of state.registeredCardElements) {
       card.classList.remove("cpfb-debug-card");
       const poster = findBestPoster(card);
@@ -2016,6 +1586,10 @@
         poster.classList.remove("cpfb-debug-card");
       }
     }
+  }
+
+  function unsilenceUi() {
+    document.documentElement.classList.remove("cpfb-disabled");
   }
 
   function showToast(message) {
