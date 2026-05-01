@@ -1,5 +1,5 @@
 (() => {
-  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.1.34";
+  const EXTENSION_VERSION = chrome.runtime?.getManifest?.().version || "0.2.4";
   const GTM_CARD_ATTRIBUTES = [
     "data-gtm-card-index",
     "data-gtm-card-item-id",
@@ -67,27 +67,16 @@
     registeredCards: new WeakSet(),
     registeredCardElements: new Set(),
     registeredCardCount: 0,
-    activeCard: null,
-    activeVisualElement: null,
-    hideTimer: 0,
+    cardObservers: new WeakMap(),
     scanTimer: 0,
     toastTimer: 0,
-    trackingRaf: 0,
-    toolbarHovered: false,
-    lastCardRect: null,
-    overlayLogged: false,
-    detectedOverlay: null,
-    toolbarHost: null,
-    toolbarHostPosition: "",
-    toolbarHostPositionPriority: ""
+    activeHoverCard: null
   };
 
-  const toolbar = createToolbar();
-  const highlight = createHighlight();
   const debugPanel = createDebugPanel();
   const toast = createToast();
 
-  document.documentElement.append(highlight, toolbar, debugPanel, toast);
+  document.documentElement.append(debugPanel, toast);
 
   chrome.storage.sync.get(
     {
@@ -108,6 +97,7 @@
       if (!state.enabled) {
         silenceUi();
       } else {
+        unsilenceUi();
         updateDebugPanel();
       }
       scheduleScan();
@@ -119,20 +109,6 @@
       scheduleScan();
     }
   });
-
-  window.addEventListener("scroll", () => {
-    if (state.activeCard && !toolbar.hidden) {
-      positionActiveUi(state.activeCard);
-    }
-  }, { passive: true });
-
-  window.addEventListener("resize", () => {
-    if (state.activeCard && !toolbar.hidden) {
-      positionActiveUi(state.activeCard);
-    }
-  });
-
-  document.addEventListener("pointerover", handlePointerOver, true);
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || message.type !== "CPF_SCAN_PAGE") {
@@ -168,81 +144,64 @@
     subtree: true
   });
 
+  // Watch for Radix HoverCard portal mounting; inject toolbar into preview
+  const portalObserver = new MutationObserver((muts) => {
+    if (!state.enabled) return;
+    for (const m of muts) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        const previewRoot = findRadixHoverCardRoot(node);
+        if (previewRoot) {
+          injectToolbarIntoPortal(previewRoot, state.activeHoverCard);
+        }
+      }
+    }
+  });
+  portalObserver.observe(document.body, { childList: true, subtree: true });
+
   setInterval(scanForCards, 2500);
 
-  function createToolbar() {
+  function buildCardToolbar(card) {
     const element = document.createElement("div");
-    element.className = "cpfb-toolbar";
-    element.hidden = true;
+    element.className = "cpfb-card-toolbar";
+    const cardStateKey = computeCardStateKey(card);
+    if (cardStateKey) {
+      element.dataset.cardStateKey = cardStateKey;
+    }
 
     const prompt = document.createElement("div");
-    prompt.className = "cpfb-prompt";
+    prompt.className = "cpfb-card-prompt";
     prompt.textContent = FEEDBACK_QUESTION;
     element.append(prompt);
 
     const buttonRow = document.createElement("div");
-    buttonRow.className = "cpfb-buttons";
+    buttonRow.className = "cpfb-card-buttons";
 
     for (const option of FEEDBACK_OPTIONS) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `cpfb-button cpfb-button--${option.tone}`;
+      button.className = `cpfb-card-button cpfb-card-button--${option.tone}`;
       button.dataset.feedbackType = option.type;
       button.title = option.label;
       button.innerHTML =
-        `<span class="cpfb-button-icon">${FEEDBACK_ICONS[option.tone]}</span>` +
-        `<span class="cpfb-button-label">${option.label}</span>`;
+        `<span class="cpfb-card-icon">${FEEDBACK_ICONS[option.tone]}</span>` +
+        `<span class="cpfb-card-label">${option.label}</span>`;
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
         button.blur();
-        submitFeedback(option.type);
+        submitFeedback(card, element, option.type);
       });
       buttonRow.append(button);
     }
 
     element.append(buttonRow);
 
-    element.addEventListener("pointerdown", (event) => {
-      event.stopPropagation();
+    // Stop card-level handlers (e.g., link click) bubbling from toolbar
+    ["pointerdown", "pointerup", "mousedown", "mouseup", "click"].forEach((type) => {
+      element.addEventListener(type, (event) => event.stopPropagation());
     });
 
-    element.addEventListener("pointerup", (event) => {
-      event.stopPropagation();
-    });
-
-    element.addEventListener("mousedown", (event) => {
-      event.stopPropagation();
-    });
-
-    element.addEventListener("mouseup", (event) => {
-      event.stopPropagation();
-    });
-
-    element.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-
-    element.addEventListener("mouseenter", () => {
-      clearTimeout(state.hideTimer);
-      state.toolbarHovered = true;
-      pinPreviewVisible();
-    });
-
-    element.addEventListener("mouseleave", () => {
-      state.toolbarHovered = false;
-      unpinPreviewVisible();
-      hideToolbarSoon();
-    });
-
-    return element;
-  }
-
-  function createHighlight() {
-    const element = document.createElement("div");
-    element.className = "cpfb-highlight";
-    element.hidden = true;
     return element;
   }
 
@@ -294,412 +253,161 @@
       findBestPoster(card)?.classList.add("cpfb-debug-card");
     }
 
+    card.classList.add("cpfb-card-host");
+
+    // Ensure card is positioned so toolbar's absolute layout is relative to it
+    if (getComputedStyle(card).position === "static") {
+      card.style.position = "relative";
+    }
+
     card.addEventListener("mouseenter", () => {
-      if (!state.enabled) {
-        return;
-      }
-
-      state.activeCard = card;
-      showToolbar(card);
+      state.activeHoverCard = card;
     });
 
-    card.addEventListener("mouseleave", (event) => {
-      handleCardMouseLeave(event, card);
+    injectToolbarIntoCard(card);
+
+    // React may re-render and remove our toolbar — observe and re-inject
+    const observer = new MutationObserver(() => {
+      if (!card.isConnected) return;
+      if (!card.querySelector(":scope > .cpfb-card-toolbar")) {
+        injectToolbarIntoCard(card);
+      }
     });
+    observer.observe(card, { childList: true });
+    state.cardObservers.set(card, observer);
   }
 
-  function handleCardMouseLeave(event, card) {
-    if (state.activeCard !== card) {
-      return;
-    }
+  function injectToolbarIntoCard(card) {
+    if (!card || !card.isConnected) return;
+    if (card.querySelector(":scope > .cpfb-card-toolbar")) return;
 
-    if (cursorStillInCardRegion(event.clientX, event.clientY, card)) {
-      return;
-    }
-
-    hideToolbarSoon();
+    const toolbar = buildCardToolbar(card);
+    card.appendChild(toolbar);
+    refreshCardToolbar(card, toolbar);
   }
 
-  function cursorStillInCardRegion(x, y, card) {
-    const rect = hasUsableCardRect(card)
-      ? card.getBoundingClientRect()
-      : state.lastCardRect;
+  function findRadixHoverCardRoot(node) {
+    if (!node || !node.querySelector) return null;
 
-    if (!rect) {
-      return false;
+    // Find the popper wrapper first
+    let popperWrapper = null;
+    if (node.matches?.("[data-radix-popper-content-wrapper]")) {
+      popperWrapper = node;
+    } else {
+      popperWrapper = node.querySelector?.("[data-radix-popper-content-wrapper]");
     }
 
-    const pad = 12;
-    return (
-      x >= rect.left - pad &&
-      x <= rect.right + pad &&
-      y >= rect.top - pad &&
-      y <= rect.bottom + pad
-    );
-  }
-
-  function showToolbar(card) {
-    clearTimeout(state.hideTimer);
-    setActiveCard(card);
-    toolbar.hidden = false;
-    highlight.hidden = false;
-    if (hasUsableCardRect(card)) {
-      state.lastCardRect = card.getBoundingClientRect();
-    }
-    applyButtonSelectedState(null);
-    refreshToolbarSelectedState(card);
-    positionActiveUi(card);
-    startActiveTracking();
-  }
-
-  function hideToolbarSoon() {
-    if (state.toolbarHovered) {
-      return;
-    }
-
-    clearTimeout(state.hideTimer);
-    state.hideTimer = window.setTimeout(() => {
-      if (state.toolbarHovered) {
-        return;
+    if (!popperWrapper) {
+      // Fallback: detect by Radix CSS var on inline style
+      const candidates = node.querySelectorAll?.("*") || [];
+      for (const el of candidates) {
+        const style = el.getAttribute?.("style") || "";
+        if (style.includes("--radix-hover-card") || style.includes("--radix-popper")) {
+          popperWrapper = el.closest?.("[data-radix-popper-content-wrapper]") || el;
+          break;
+        }
       }
-
-      toolbar.hidden = true;
-      highlight.hidden = true;
-      setActiveCard(null);
-      state.activeCard = null;
-      state.lastCardRect = null;
-      state.overlayLogged = false;
-      state.detectedOverlay = null;
-      unpinPreviewVisible();
-      applyButtonSelectedState(null);
-      toolbar.style.transform = "";
-      toolbar.style.transformOrigin = "";
-      stopActiveTracking();
-    }, 300);
-  }
-
-  function startActiveTracking() {
-    if (state.trackingRaf) {
-      return;
     }
 
-    const tick = () => {
-      if (toolbar.hidden || !state.activeCard) {
-        state.trackingRaf = 0;
-        return;
-      }
+    if (!popperWrapper) return null;
 
-      if (!state.toolbarHovered && hasUsableCardRect(state.activeCard)) {
-        positionActiveUi(state.activeCard);
-        state.lastCardRect = state.activeCard.getBoundingClientRect();
-      }
+    // Drill INTO the popper wrapper — find the Radix HoverCard Content element
+    // (it has data-state attribute since Radix manages its open/closed state)
+    const innerContent =
+      popperWrapper.querySelector("[data-state='open']") ||
+      popperWrapper.querySelector("[data-state]") ||
+      popperWrapper.firstElementChild;
 
-      state.trackingRaf = requestAnimationFrame(tick);
-    };
-
-    state.trackingRaf = requestAnimationFrame(tick);
+    return innerContent || popperWrapper;
   }
 
-  function hasUsableCardRect(card) {
-    const rect = card?.getBoundingClientRect?.();
-    return Boolean(rect && rect.width > 4 && rect.height > 4);
-  }
+  function injectToolbarIntoPortal(portalRoot, card) {
+    if (!portalRoot || !card) return;
+    if (portalRoot.querySelector(".cpfb-portal-toolbar")) return;
 
-  function stopActiveTracking() {
-    if (state.trackingRaf) {
-      cancelAnimationFrame(state.trackingRaf);
-      state.trackingRaf = 0;
-    }
-  }
-
-  function positionActiveUi(card) {
-    const rect = getPresentationRect(card);
-    syncToolbarHost();
-    positionHighlight(rect);
-    positionToolbar(rect);
-  }
-
-  function getPresentationRect(card) {
-    if (!card || !hasUsableCardRect(card)) {
-      state.detectedOverlay = null;
-      return card?.getBoundingClientRect?.() || new DOMRect(0, 0, 0, 0);
+    // Ensure portal root is positioned for absolute toolbar
+    if (getComputedStyle(portalRoot).position === "static") {
+      portalRoot.style.position = "relative";
     }
 
-    const cardRect = card.getBoundingClientRect();
-    const overlay = findOverlayPreview(card, cardRect);
+    const toolbar = buildCardToolbar(card);
+    toolbar.classList.add("cpfb-portal-toolbar");
+    portalRoot.appendChild(toolbar);
+    refreshCardToolbar(card, toolbar);
+  }
 
-    if (!overlay) {
-      state.detectedOverlay = null;
-      return cardRect;
-    }
+  async function refreshCardToolbar(card, toolbar) {
+    const tb = toolbar || card.querySelector(":scope > .cpfb-card-toolbar");
+    if (!tb) return;
 
-    state.detectedOverlay = overlay;
-
-    if (!state.overlayLogged) {
-      state.overlayLogged = true;
-      console.log("[CATCHPLAY Feedback MVP] preview overlay detected", {
-        tag: overlay.tagName.toLowerCase(),
-        className: typeof overlay.className === "string" ? overlay.className.slice(0, 200) : "",
-        rect: overlay.getBoundingClientRect(),
-        cardRect
+    try {
+      const { userName } = await chrome.storage.sync.get(["userName"]);
+      const anchor = findAnchor(card);
+      const metadata = getCardMetadata(card);
+      const sectionInfo = getSectionInfo(card, metadata);
+      const contentHref = normalizeUrl(anchor?.getAttribute("href") || "");
+      const contentId = getUsefulGtmItemId(metadata.itemId) || deriveContentId(contentHref);
+      const stateKey = buildStateKey({
+        pageType: derivePageType(location.href),
+        pageContextId: derivePageContextId(location.href),
+        sectionListName: sectionInfo.listName,
+        contentId
       });
+      const stored = await getStoredFeedbackState(userName || "", stateKey);
+      applyToolbarSelectedState(tb, stored?.feedbackType || null);
+    } catch (error) {
+      console.warn("[CATCHPLAY Feedback MVP] state lookup failed", error);
     }
-
-    return overlay.getBoundingClientRect();
   }
 
-  function pinPreviewVisible() {
-    const preview = state.detectedOverlay;
-    if (!preview || !preview.isConnected) {
-      return;
+  function computeCardStateKey(card) {
+    if (!card) return "";
+    try {
+      const anchor = findAnchor(card);
+      const metadata = getCardMetadata(card);
+      const sectionInfo = getSectionInfo(card, metadata);
+      const contentHref = normalizeUrl(anchor?.getAttribute("href") || "");
+      const contentId = getUsefulGtmItemId(metadata.itemId) || deriveContentId(contentHref);
+      return buildStateKey({
+        pageType: derivePageType(location.href),
+        pageContextId: derivePageContextId(location.href),
+        sectionListName: sectionInfo.listName,
+        contentId
+      });
+    } catch (_e) {
+      return "";
     }
-
-    mountToolbarInPreview(preview);
   }
 
-  function unpinPreviewVisible() {
-    syncToolbarHost();
-  }
-
-  function syncToolbarHost() {
-    const preview = state.detectedOverlay;
-    if (preview && preview.isConnected) {
-      mountToolbarInPreview(preview);
-      return;
-    }
-
-    moveToolbarToDocumentRoot();
-  }
-
-  function mountToolbarInPreview(preview) {
-    if (state.toolbarHost === preview && toolbar.parentElement === preview) {
-      toolbar.classList.add("cpfb-toolbar--preview-mounted");
-      return;
-    }
-
-    restoreToolbarHostPosition();
-    state.toolbarHost = preview;
-    state.toolbarHostPosition = preview.style.getPropertyValue("position");
-    state.toolbarHostPositionPriority = preview.style.getPropertyPriority("position");
-
-    if (getComputedStyle(preview).getPropertyValue("position") === "static") {
-      preview.style.setProperty("position", "relative", "important");
-    }
-
-    preview.append(toolbar);
-    toolbar.classList.add("cpfb-toolbar--preview-mounted");
-  }
-
-  function moveToolbarToDocumentRoot() {
-    if (toolbar.parentElement !== document.documentElement) {
-      document.documentElement.append(toolbar);
-    }
-
-    toolbar.classList.remove("cpfb-toolbar--preview-mounted");
-    restoreToolbarHostPosition();
-  }
-
-  function restoreToolbarHostPosition() {
-    if (!state.toolbarHost) {
-      return;
-    }
-
-    restoreInlineStyle(
-      state.toolbarHost,
-      "position",
-      state.toolbarHostPosition,
-      state.toolbarHostPositionPriority
+  function syncAllToolbarsForKey(stateKey, feedbackType) {
+    if (!stateKey) return;
+    const escaped = (window.CSS && window.CSS.escape) ? window.CSS.escape(stateKey) : stateKey;
+    const toolbars = document.querySelectorAll(
+      `.cpfb-card-toolbar[data-card-state-key="${escaped}"]`
     );
-
-    state.toolbarHost = null;
-    state.toolbarHostPosition = "";
-    state.toolbarHostPositionPriority = "";
-  }
-
-  function restoreInlineStyle(element, property, value, priority) {
-    if (value) {
-      element.style.setProperty(property, value, priority || "");
-    } else {
-      element.style.removeProperty(property);
+    for (const tb of toolbars) {
+      applyToolbarSelectedState(tb, feedbackType);
     }
   }
 
-  function findOverlayPreview(card, cardRect) {
-    const cx = cardRect.left + cardRect.width / 2;
-    const cy = cardRect.top + cardRect.height / 2;
-
-    const stack = document.elementsFromPoint(cx, cy);
-    for (const element of stack) {
-      if (!element || !element.isConnected) continue;
-      if (element === toolbar || toolbar.contains(element)) continue;
-      if (element === highlight || highlight.contains(element)) continue;
-      if (element === debugPanel || debugPanel.contains(element)) continue;
-      if (element === toast || toast.contains(element)) continue;
-      if (element === card || card.contains(element) || element.contains(card)) continue;
-      if (element === document.body || element === document.documentElement) continue;
-
-      const rect = element.getBoundingClientRect();
-      if (rect.width <= cardRect.width && rect.height <= cardRect.height) continue;
-      if (rect.width > window.innerWidth * 0.92) continue;
-      if (rect.height > window.innerHeight * 0.95) continue;
-
-      return expandToOverlayRoot(element, card);
-    }
-
-    return null;
-  }
-
-  function expandToOverlayRoot(element, card) {
-    const cardRect = card.getBoundingClientRect();
-    const widthCeiling = Math.min(window.innerWidth * 0.92, cardRect.width * 2.5);
-    let best = element;
-    let bestRect = best.getBoundingClientRect();
-    let current = element.parentElement;
-
-    while (current && current !== document.body && current !== document.documentElement) {
-      if (current.contains(card)) break;
-
-      const rect = current.getBoundingClientRect();
-      if (rect.width > widthCeiling) break;
-      if (rect.height > window.innerHeight * 0.95) break;
-      if (rect.width > bestRect.width * 1.4) break;
-
-      best = current;
-      bestRect = rect;
-      current = current.parentElement;
-    }
-
-    return best;
-  }
-
-  function positionHighlight(rect) {
-    const padding = 3;
-
-    highlight.style.top = `${Math.round(rect.top - padding)}px`;
-    highlight.style.left = `${Math.round(rect.left - padding)}px`;
-    highlight.style.width = `${Math.round(rect.width + padding * 2)}px`;
-    highlight.style.height = `${Math.round(rect.height + padding * 2)}px`;
-  }
-
-  function positionToolbar(rect) {
-    const toolbarWidth = toolbar.offsetWidth || 200;
-    const toolbarHeight = toolbar.offsetHeight || 80;
-    const inset = 8;
-
-    const fitWidth = rect.width - inset * 2;
-    const scale = fitWidth > 0 && fitWidth < toolbarWidth
-      ? clamp(fitWidth / toolbarWidth, 0.5, 1)
-      : 1;
-
-    const effectiveWidth = toolbarWidth * scale;
-    const effectiveHeight = toolbarHeight * scale;
-
-    const idealLeft = rect.right - effectiveWidth - inset;
-    const idealTop = rect.bottom - effectiveHeight - inset;
-
-    let left = clamp(idealLeft, 8, Math.max(8, window.innerWidth - effectiveWidth - 8));
-    let top = clamp(idealTop, 8, Math.max(8, window.innerHeight - effectiveHeight - 8));
-
-    if (state.toolbarHost && toolbar.parentElement === state.toolbarHost) {
-      const hostRect = state.toolbarHost.getBoundingClientRect();
-      left -= hostRect.left;
-      top -= hostRect.top;
-    }
-
-    toolbar.style.top = `${Math.round(top)}px`;
-    toolbar.style.left = `${Math.round(left)}px`;
-
-    if (scale < 1) {
-      toolbar.style.transform = `scale(${scale.toFixed(3)})`;
-      toolbar.style.transformOrigin = "top left";
-    } else {
-      toolbar.style.transform = "";
-      toolbar.style.transformOrigin = "";
-    }
-  }
-
-  function setActiveCard(card) {
-    state.activeVisualElement?.classList.remove("cpfb-active-card");
-
-    if (!card) {
-      state.activeVisualElement = null;
-      return;
-    }
-
-    const visualElement = findBestPoster(card) || card;
-    visualElement.classList.add("cpfb-active-card");
-    state.activeVisualElement = visualElement;
-  }
-
-  function handlePointerOver(event) {
-    if (!state.enabled || toolbar.contains(event.target)) {
-      return;
-    }
-
-    const card = findRegisteredCardFromTarget(event.target, event.clientX, event.clientY);
-    if (!card) {
-      return;
-    }
-
-    state.activeCard = card;
-    showToolbar(card);
-  }
-
-  function findRegisteredCardFromTarget(target, clientX, clientY) {
-    let current = target instanceof Element ? target : null;
-
-    while (current && current !== document.documentElement) {
-      if (state.registeredCards.has(current)) {
-        return current;
-      }
-
-      current = current.parentElement;
-    }
-
-    for (const card of state.registeredCardElements) {
-      if (card.contains(target)) {
-        return card;
+  function applyToolbarSelectedState(toolbar, feedbackType) {
+    if (!toolbar) return;
+    const buttons = toolbar.querySelectorAll(".cpfb-card-button");
+    for (const button of buttons) {
+      if (feedbackType && button.dataset.feedbackType === feedbackType) {
+        button.classList.add("cpfb-card-button--selected");
+      } else {
+        button.classList.remove("cpfb-card-button--selected");
       }
     }
-
-    if (typeof clientX === "number" && typeof clientY === "number") {
-      return findCardAtPoint(clientX, clientY);
-    }
-
-    return null;
   }
 
-  function findCardAtPoint(x, y) {
-    let best = null;
-    let bestArea = Infinity;
 
-    for (const card of state.registeredCardElements) {
-      const rect = getVisibleRect(card);
-      if (rect.width <= 0 || rect.height <= 0) {
-        continue;
-      }
+  async function submitFeedback(card, toolbar, clickedType) {
+    if (!state.enabled) return;
+    if (!card) return;
 
-      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-        continue;
-      }
-
-      const area = rect.width * rect.height;
-      if (area < bestArea) {
-        best = card;
-        bestArea = area;
-      }
-    }
-
-    return best;
-  }
-
-  async function submitFeedback(clickedType) {
-    if (!state.activeCard) {
-      showToast("No active card detected.");
-      return;
-    }
-
-    const payload = await buildPayload(state.activeCard, clickedType);
+    const payload = await buildPayload(card, clickedType);
     const stateKey = buildStateKey(payload);
     const userName = payload.user || "";
     const previousEntry = await getStoredFeedbackState(userName, stateKey);
@@ -709,10 +417,10 @@
       payload.feedbackType = FEEDBACK_CLEARED_TYPE;
       payload.previousFeedbackType = clickedType;
       await setStoredFeedbackState(userName, stateKey, null);
-      applyButtonSelectedState(null);
+      syncAllToolbarsForKey(stateKey, null);
     } else {
       await setStoredFeedbackState(userName, stateKey, clickedType);
-      applyButtonSelectedState(clickedType);
+      syncAllToolbarsForKey(stateKey, clickedType);
     }
 
     console.log("[CATCHPLAY Feedback MVP] payload", payload);
@@ -779,51 +487,6 @@
     }
 
     await chrome.storage.local.set({ [storageKey]: map });
-  }
-
-  function applyButtonSelectedState(feedbackType) {
-    const buttons = toolbar.querySelectorAll(".cpfb-button");
-    for (const button of buttons) {
-      if (feedbackType && button.dataset.feedbackType === feedbackType) {
-        button.classList.add("cpfb-button--selected");
-      } else {
-        button.classList.remove("cpfb-button--selected");
-      }
-    }
-  }
-
-  async function refreshToolbarSelectedState(card) {
-    if (!card) {
-      applyButtonSelectedState(null);
-      return;
-    }
-
-    try {
-      const { userName } = await chrome.storage.sync.get(["userName"]);
-      const anchor = findAnchor(card);
-      const metadata = getCardMetadata(card);
-      const sectionInfo = getSectionInfo(card, metadata);
-      const contentHref = normalizeUrl(anchor?.getAttribute("href") || "");
-      const contentId = getUsefulGtmItemId(metadata.itemId) || deriveContentId(contentHref);
-      const stateKey = buildStateKey({
-        pageType: derivePageType(location.href),
-        pageContextId: derivePageContextId(location.href),
-        sectionListName: sectionInfo.listName,
-        contentId
-      });
-
-      if (state.activeCard !== card) {
-        return;
-      }
-
-      const stored = await getStoredFeedbackState(userName || "", stateKey);
-      if (state.activeCard !== card) {
-        return;
-      }
-      applyButtonSelectedState(stored?.feedbackType || null);
-    } catch (error) {
-      console.warn("[CATCHPLAY Feedback MVP] state lookup failed", error);
-    }
   }
 
   async function buildPayload(card, feedbackType) {
@@ -2018,17 +1681,8 @@
   }
 
   function silenceUi() {
-    toolbar.hidden = true;
-    highlight.hidden = true;
     debugPanel.hidden = true;
-    state.toolbarHovered = false;
-    state.activeCard = null;
-    state.detectedOverlay = null;
-    unpinPreviewVisible();
-    if (state.activeVisualElement) {
-      state.activeVisualElement.classList.remove("cpfb-active-card");
-      state.activeVisualElement = null;
-    }
+    document.documentElement.classList.add("cpfb-disabled");
     for (const card of state.registeredCardElements) {
       card.classList.remove("cpfb-debug-card");
       const poster = findBestPoster(card);
@@ -2036,6 +1690,10 @@
         poster.classList.remove("cpfb-debug-card");
       }
     }
+  }
+
+  function unsilenceUi() {
+    document.documentElement.classList.remove("cpfb-disabled");
   }
 
   function showToast(message) {

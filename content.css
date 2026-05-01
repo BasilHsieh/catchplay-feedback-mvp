@@ -1,159 +1,148 @@
-.cpfb-toolbar {
-  position: fixed;
-  z-index: 2147483647;
+.cpfb-card-host {
+  /* host class added to every registered card; positioning context for absolute toolbar */
+}
+
+.cpfb-card-toolbar {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  z-index: 9999;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  align-items: stretch;
+  gap: 6px;
   box-sizing: border-box;
-  max-width: calc(100vw - 16px);
-  padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-  background: rgba(12, 14, 18, 0.7);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  backdrop-filter: blur(18px) saturate(160%);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  max-width: calc(100% - 16px);
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(12, 14, 18, 0.78);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
   color: #fff;
   font-family: Arial, Helvetica, sans-serif;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.cpfb-card-host:hover > .cpfb-card-toolbar,
+.cpfb-card-host:focus-within > .cpfb-card-toolbar,
+.cpfb-card-host[data-state="open"] > .cpfb-card-toolbar {
+  opacity: 1;
   pointer-events: auto;
-  transition: top 120ms ease-out, left 120ms ease-out, transform 120ms ease-out;
 }
 
-.cpfb-toolbar[hidden] {
-  display: none;
+/* Portal toolbar inside Radix HoverCard preview — always visible while preview is open */
+.cpfb-portal-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 2147483647;
 }
 
-.cpfb-toolbar--preview-mounted {
-  position: absolute;
+html.cpfb-disabled .cpfb-card-toolbar {
+  display: none !important;
 }
 
-.cpfb-prompt {
-  color: rgba(255, 255, 255, 0.78);
-  font: 500 12px/1.25 Arial, Helvetica, sans-serif;
+.cpfb-card-prompt {
+  color: rgba(255, 255, 255, 0.82);
+  font: 500 11px/1.2 Arial, Helvetica, sans-serif;
   text-align: center;
   white-space: nowrap;
 }
 
-.cpfb-buttons {
+.cpfb-card-buttons {
   display: flex;
-  gap: 8px;
-  align-items: stretch;
+  gap: 6px;
 }
 
-.cpfb-button {
+.cpfb-card-button {
   display: inline-flex;
   flex: 1;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
-  padding: 0 14px;
+  min-height: 28px;
+  padding: 0 10px;
   border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
   color: #fff;
-  font: 600 14px/1 Arial, Helvetica, sans-serif;
+  font: 600 12px/1 Arial, Helvetica, sans-serif;
   white-space: nowrap;
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
-.cpfb-button:hover,
-.cpfb-button:focus {
-  background: rgba(255, 255, 255, 0.18);
+.cpfb-card-button:focus {
   outline: none;
 }
 
-.cpfb-button-icon {
-  display: inline-flex;
-  width: 14px;
-  height: 14px;
-}
-
-.cpfb-button-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.cpfb-button-label {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.cpfb-button:focus {
-  outline: none;
-}
-
-.cpfb-button:focus-visible {
+.cpfb-card-button:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.6);
   outline-offset: 2px;
 }
 
-.cpfb-button--positive {
+.cpfb-card-button--positive {
   border-color: rgba(61, 220, 132, 0.45);
   color: #a7f3c5;
 }
 
-.cpfb-button--positive:hover {
+.cpfb-card-button--positive:hover {
   background: rgba(61, 220, 132, 0.2);
   border-color: rgba(61, 220, 132, 0.65);
 }
 
-.cpfb-button--positive.cpfb-button--selected {
+.cpfb-card-button--positive.cpfb-card-button--selected {
   background: rgba(61, 220, 132, 0.85);
   border-color: rgba(61, 220, 132, 0.95);
   color: #052e16;
 }
 
-.cpfb-button--positive.cpfb-button--selected:hover {
+.cpfb-card-button--positive.cpfb-card-button--selected:hover {
   background: rgba(61, 220, 132, 0.95);
-  border-color: rgba(61, 220, 132, 1);
 }
 
-.cpfb-button--negative {
+.cpfb-card-button--negative {
   border-color: rgba(248, 113, 113, 0.45);
   color: #fca5a5;
 }
 
-.cpfb-button--negative:hover {
+.cpfb-card-button--negative:hover {
   background: rgba(248, 113, 113, 0.2);
   border-color: rgba(248, 113, 113, 0.65);
 }
 
-.cpfb-button--negative.cpfb-button--selected {
+.cpfb-card-button--negative.cpfb-card-button--selected {
   background: rgba(248, 113, 113, 0.85);
   border-color: rgba(248, 113, 113, 0.95);
   color: #450a0a;
 }
 
-.cpfb-button--negative.cpfb-button--selected:hover {
+.cpfb-card-button--negative.cpfb-card-button--selected:hover {
   background: rgba(248, 113, 113, 0.95);
-  border-color: rgba(248, 113, 113, 1);
+}
+
+.cpfb-card-icon {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+}
+
+.cpfb-card-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.cpfb-card-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .cpfb-debug-card {
   outline: 2px solid rgba(46, 204, 113, 0.9) !important;
   outline-offset: 2px !important;
-}
-
-.cpfb-active-card {
-  outline: 1px solid rgba(255, 255, 255, 0.45) !important;
-  outline-offset: 2px !important;
-}
-
-.cpfb-highlight {
-  position: fixed;
-  z-index: 2147483646;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: 8px;
-  box-shadow: 0 0 16px rgba(0, 0, 0, 0.18);
-  pointer-events: none;
-}
-
-.cpfb-highlight[hidden] {
-  display: none;
 }
 
 .cpfb-debug-panel {
