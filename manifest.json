@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CATCHPLAY Feedback MVP",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Internal feedback overlay for CATCHPLAY recommendation cards.",
   "permissions": ["activeTab", "storage"],
   "host_permissions": [
